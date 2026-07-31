@@ -218,9 +218,9 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
     return;
   }
 
-  // 8. Handle /skills or /plugins
+  // 8. Handle /skills or /plugins (Complete Uncut Listing)
   if (lowerText === '/skills' || lowerText === '!skills' || lowerText === '/plugins' || lowerText === '!plugins') {
-    await gatewayRef.sendMessage(jid, '🛠️ *Fetching installed AGY Skills & Plugins...*\n_Inspecting workspace skills..._');
+    await gatewayRef.sendMessage(jid, '🛠️ *Fetching complete list of installed AGY Skills & Plugins...*\n_Inspecting all skill manifests..._');
     await gatewayRef.sendTyping(jid);
 
     const existingSession = chatSessions.get(jid);
@@ -230,7 +230,7 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
     try {
       startTask(
         jid,
-        "List all installed AGY skills and plugins in this workspace briefly.",
+        "List EVERY single installed AGY skill and plugin in this workspace as a full, complete, un-truncated bulleted list with their exact name and short description. Do NOT summarize or omit any skills.",
         { continueConvId },
         async (progressText) => {
           const now = Date.now();
@@ -242,8 +242,8 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
         },
         async (finalResponse) => {
           await gatewayRef.sendTyping(jid, false);
-          const formatted = markdownToWhatsApp(`🛠️ *Native AGY Skills & Plugins:*\n\n${finalResponse}`);
-          const chunks = splitMessage(formatted);
+          const formatted = markdownToWhatsApp(`🛠️ *Complete Installed AGY Skills & Plugins:*\n\n${finalResponse}`);
+          const chunks = splitMessage(formatted, 3800);
           for (let i = 0; i < chunks.length; i++) {
             await gatewayRef.sendMessage(jid, chunks[i]);
           }
@@ -351,7 +351,7 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
 
         // Format and send text response
         const formatted = markdownToWhatsApp(finalResponse);
-        const chunks = splitMessage(formatted);
+        const chunks = splitMessage(formatted, 3800);
 
         for (let i = 0; i < chunks.length; i++) {
           await gatewayRef.sendMessage(jid, chunks[i]);
