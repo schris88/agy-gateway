@@ -174,9 +174,10 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
     const hasHistory = !!session?.conversationId;
 
     const helpMessage = `
-🚀 *Native AGY Agent Functions & Slash Commands*
+🚀 *Native AGY Slash Commands & Functions*
 
 • */goal <prompt>* - Long-running goal task with high reasoning effort & live updates
+• */plan <prompt>* - Step-by-step plan execution mode
 • */models* - Native AGY models (Gemini 3.6 Flash, Gemini 3.1 Pro, Claude Sonnet 4-6)
 • */agents* - Native AGY subagents (research, self)
 • */skills* or */plugins* - Installed AGY skills & plugin extensions
@@ -184,7 +185,7 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
 • */reset* or */clear* - Clear chat history & start fresh AGY session
 • */cancel* - Cancel active running task
 • */btw <note>* - Inject mid-task update
-• *<any prompt>* - Ask AGY directly (voice, text, image edit, code)
+• *<slash skill, e.g. /caveman, /learn>* - All AGY slash skills work directly!
 
 💡 *AGY Context Memory:* ${hasHistory ? '🧠 *Active session memory enabled*' : '🆕 *New session*'}
 `;
@@ -268,17 +269,21 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
     return;
   }
 
-  // 10. Handle /goal <prompt>
+  // 10. Handle /goal or /plan or general slash prompt
   let isGoal = false;
+  let mode = undefined;
   let prompt = cleanText;
 
   if (lowerText.startsWith('/goal ') || lowerText.startsWith('!goal ')) {
     isGoal = true;
     prompt = cleanText.slice(6).trim();
+  } else if (lowerText.startsWith('/plan ') || lowerText.startsWith('!plan ')) {
+    mode = 'plan';
+    prompt = cleanText.slice(6).trim();
   }
 
   if (!prompt) {
-    await gatewayRef.sendMessage(jid, '⚠️ Please provide a prompt for `/goal`. Example: `/goal build a web scraper`');
+    await gatewayRef.sendMessage(jid, '⚠️ Please provide a prompt. Example: `/goal build a web scraper` or `/plan design architecture`');
     return;
   }
 
@@ -288,9 +293,8 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
   const taskStartTime = Date.now();
 
   // 11. Start Prompt Execution with Interactive Progress
-  const initialAck = isGoal
-    ? `🎯 *AGY Goal Task Received!* Initializing high-reasoning agent pipeline...\n_${continueConvId ? 'Continuing AGY conversation' : 'New AGY conversation'}. Send /cancel to stop, or reply with notes anytime._`
-    : `⏳ *AGY is thinking...*\n_${continueConvId ? 'Continuing AGY conversation' : 'New AGY conversation'}. Send /cancel to stop, or reply with notes anytime._`;
+  const modeLabel = isGoal ? 'Goal Task' : (mode === 'plan' ? 'Plan Task' : 'Task');
+  const initialAck = `⏳ *AGY ${modeLabel} Received!* Initializing agent pipeline...\n_${continueConvId ? 'Continuing AGY session' : 'New AGY session'}. Send /cancel to stop, or reply with notes anytime._`;
 
   await gatewayRef.sendMessage(jid, initialAck);
   await gatewayRef.sendTyping(jid);
@@ -300,6 +304,7 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
   const options = {
     isGoal,
     effort: isGoal ? 'high' : undefined,
+    mode,
     continueConvId
   };
 

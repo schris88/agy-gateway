@@ -10,7 +10,7 @@ const activeTasks = new Map();
  * Spawns an AGY execution task.
  * @param {string} jid WhatsApp chat ID
  * @param {string} prompt Prompt string
- * @param {object} options Options like { effort: 'high', model: '...', isGoal: false, continueConvId: null }
+ * @param {object} options Options like { effort: 'high', mode: 'plan', model: '...', isGoal: false, continueConvId: null }
  * @param {function} onProgress Callback for status updates (tool calls, thinking, btw notes)
  * @param {function} onComplete Callback on task success with final response text
  * @param {function} onError Callback on failure
@@ -37,6 +37,10 @@ function startTask(jid, prompt, options = {}, onProgress, onComplete, onError) {
 
   if (options.effort) {
     args.push('--effort', options.effort);
+  }
+
+  if (options.mode) {
+    args.push('--mode', options.mode);
   }
 
   if (options.model) {
@@ -217,39 +221,10 @@ function getAllActiveTasks() {
   return tasks;
 }
 
-/**
- * Fetches available models from `agy models`
- */
-function getAvailableModels() {
-  return new Promise((resolve, reject) => {
-    const child = spawn(config.agyBinPath, ['models'], {
-      cwd: config.workspaceDir,
-      env: process.env
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', d => stdout += d.toString());
-    child.stderr.on('data', d => stderr += d.toString());
-
-    child.on('close', code => {
-      if (code === 0 || stdout.trim().length > 0) {
-        resolve(stdout.trim());
-      } else {
-        reject(new Error(`Failed to list models: ${stderr}`));
-      }
-    });
-
-    child.on('error', err => reject(err));
-  });
-}
-
 module.exports = {
   startTask,
   cancelTask,
   isTaskRunning,
   getActiveTask,
-  getAllActiveTasks,
-  getAvailableModels
+  getAllActiveTasks
 };
