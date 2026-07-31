@@ -237,8 +237,10 @@ async function startWhatsAppGateway() {
       const fromMe = !!msg.key.fromMe;
       const senderJid = msg.key.remoteJid;
 
+      const meUser = sock?.user || state?.creds?.me;
+
       // Filter allowed JIDs (self-chat only by default, groups blocked by default)
-      if (!isJidAllowed(senderJid, fromMe, sock?.user)) {
+      if (!isJidAllowed(senderJid, fromMe, meUser)) {
         logger.info(`Ignoring message from non-whitelisted sender/chat: ${senderJid} (fromMe: ${fromMe})`);
         continue;
       }
@@ -265,8 +267,9 @@ async function startWhatsAppGateway() {
     for (const reaction of reactions) {
       const senderJid = reaction.key.remoteJid;
       const fromMe = !!reaction.key.fromMe;
+      const meUser = sock?.user || state?.creds?.me;
 
-      if (!isJidAllowed(senderJid, fromMe, sock?.user)) continue;
+      if (!isJidAllowed(senderJid, fromMe, meUser)) continue;
 
       const emoji = reaction.reaction?.text;
       const targetMsgId = reaction.key.id;
@@ -307,23 +310,23 @@ function isJidAllowed(jid, fromMe, meUser) {
     return config.whatsappAllowedNumbers.some(num => groupId.includes(num));
   }
 
-  // 2. Normalize phone/LID numbers for logged-in user and target JID
+  // 2. Extract normalized phone/LID numbers for logged-in user and target JID
   const myNum = meUser?.id ? meUser.id.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : '';
   const myLid = meUser?.lid ? meUser.lid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : '';
   const targetNum = jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
   // 3. Self-Chat Detection:
-  // In WhatsApp Multi-Device, self-chat messages sent by the user have fromMe=true AND
-  // targetJid matching user's Phone Number, user's LID (@lid), or LID format.
-  const isLidSelfChat = jid.endsWith('@lid');
-  const matchesSelfNum = (myNum && targetNum === myNum) || (myLid && targetNum === myLid);
-  const isSelfChat = fromMe && (isLidSelfChat || matchesSelfNum || (!myNum && !myLid));
+  // A message is Self-Chat ONLY IF:
+  // - fromMe is true
+  // - AND the chat target matches the logged-in user's own Phone Number or LID
+  const isSelfTarget = (myNum && targetNum === myNum) || (myLid && targetNum === myLid);
+  const isSelfChat = fromMe && isSelfTarget;
 
   if (isSelfChat) {
     return config.whatsappAllowSelf;
   }
 
-  // 4. External Chat (incoming from other contact, or outgoing in other contact's chat)
+  // 4. External Chat (incoming from other contact like Mom, or outgoing in Mom's chat window)
   if (config.whatsappAllowedNumbers.includes('*')) {
     return true;
   }
