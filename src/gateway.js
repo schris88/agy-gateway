@@ -4,7 +4,9 @@ const {
   DisconnectReason,
   fetchLatestBaileysVersion,
   Browsers,
-  downloadMediaMessage
+  downloadMediaMessage,
+  areJidsSameUser,
+  jidNormalizedUser
 } = require('@whiskeysockets/baileys');
 const qrcodeTerminal = require('qrcode-terminal');
 const pino = require('pino');
@@ -310,17 +312,21 @@ function isJidAllowed(jid, fromMe, meUser) {
     return config.whatsappAllowedNumbers.some(num => groupId.includes(num));
   }
 
-  // 2. Extract normalized phone/LID numbers for logged-in user and target JID
-  const myNum = meUser?.id ? meUser.id.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : '';
-  const myLid = meUser?.lid ? meUser.lid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : '';
-  const targetNum = jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  // 2. Official Baileys JID normalization and user matching
+  const normalizedTargetJid = jidNormalizedUser(jid);
+  const targetNum = normalizedTargetJid.split('@')[0].replace(/[^0-9]/g, '');
+
+  const myNum = meUser?.id ? jidNormalizedUser(meUser.id).split('@')[0].replace(/[^0-9]/g, '') : '';
+  const myLid = meUser?.lid ? jidNormalizedUser(meUser.lid).split('@')[0].replace(/[^0-9]/g, '') : '';
 
   // 3. Self-Chat Detection:
-  // A message is Self-Chat ONLY IF:
-  // - fromMe is true
-  // - AND the chat target matches the logged-in user's own Phone Number or LID
-  const isSelfTarget = (myNum && targetNum === myNum) || (myLid && targetNum === myLid);
-  const isSelfChat = fromMe && isSelfTarget;
+  // Use official Baileys helper areJidsSameUser to check if target matches authenticated user JID or LID
+  const isSameUser = (meUser?.id && areJidsSameUser(jid, meUser.id)) ||
+                     (meUser?.lid && areJidsSameUser(jid, meUser.lid)) ||
+                     (myNum && targetNum === myNum) ||
+                     (myLid && targetNum === myLid);
+
+  const isSelfChat = fromMe && isSameUser;
 
   if (isSelfChat) {
     return config.whatsappAllowSelf;
