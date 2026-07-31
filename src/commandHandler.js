@@ -500,17 +500,11 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
     continueConvId
   };
 
-  // Heartbeat timer to keep WhatsApp typing active and notify user of elapsed time if long-running
+  // Heartbeat timer to keep native WhatsApp typing indicator active ("schreibt...") as a clean loading spinner
   let heartbeatInterval = null;
   heartbeatInterval = setInterval(async () => {
     try {
       await gatewayRef.sendTyping(jid, true);
-      const elapsedSec = Math.round((Date.now() - taskStartTime) / 1000);
-      if (Date.now() - lastProgressSent >= 15000) {
-        lastProgressSent = Date.now();
-        await gatewayRef.sendMessage(jid, `⏳ *AGY is working...* (${elapsedSec}s elapsed)`);
-        await gatewayRef.sendTyping(jid, true);
-      }
     } catch (e) {
       // Ignore heartbeat error
     }
