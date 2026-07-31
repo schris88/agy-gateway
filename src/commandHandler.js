@@ -408,6 +408,9 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
           } else {
             await gatewayRef.sendMessage(jid, `❌ *Failed to list skills:* ${err.message}`);
           }
+        },
+        async () => {
+          await gatewayRef.sendTyping(jid, false);
         }
       );
     } catch (e) {
@@ -487,7 +490,8 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
   };
 
   // Heartbeat timer to keep WhatsApp typing active and notify user of elapsed time if long-running
-  const heartbeatInterval = setInterval(async () => {
+  let heartbeatInterval = null;
+  heartbeatInterval = setInterval(async () => {
     try {
       await gatewayRef.sendTyping(jid);
       const elapsedSec = Math.round((Date.now() - taskStartTime) / 1000);
@@ -499,6 +503,13 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
       // Ignore heartbeat error
     }
   }, 6000);
+
+  const cleanupHeartbeat = () => {
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
+    }
+  };
 
   try {
     startTask(
@@ -516,7 +527,7 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
       },
       // onComplete callback
       async (finalResponse, convId) => {
-        clearInterval(heartbeatInterval);
+        cleanupHeartbeat();
         await gatewayRef.sendTyping(jid, false);
 
         // Update persistent conversation session memory
@@ -559,7 +570,7 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
       },
       // onError callback
       async (err) => {
-        clearInterval(heartbeatInterval);
+        cleanupHeartbeat();
         await gatewayRef.sendTyping(jid, false);
         const { isRateLimit, waitMs } = parseRateLimitWaitTime(err.message);
 
@@ -582,10 +593,15 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
         } else {
           await gatewayRef.sendMessage(jid, `❌ *Error executing task:* ${err.message}`);
         }
+      },
+      // onCancel callback
+      async () => {
+        cleanupHeartbeat();
+        await gatewayRef.sendTyping(jid, false);
       }
     );
   } catch (err) {
-    clearInterval(heartbeatInterval);
+    cleanupHeartbeat();
     await gatewayRef.sendMessage(jid, `⚠️ ${err.message}`);
   }
 }

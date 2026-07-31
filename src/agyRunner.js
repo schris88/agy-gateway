@@ -14,8 +14,9 @@ const activeTasks = new Map();
  * @param {function} onProgress Callback for status updates (tool calls, thinking, btw notes)
  * @param {function} onComplete Callback on task success with final response text
  * @param {function} onError Callback on failure
+ * @param {function} onCancel Optional callback on task cancellation
  */
-function startTask(jid, prompt, options = {}, onProgress, onComplete, onError) {
+function startTask(jid, prompt, options = {}, onProgress, onComplete, onError, onCancel) {
   if (activeTasks.has(jid)) {
     const existing = activeTasks.get(jid);
     if (options.isBtw) {
@@ -71,7 +72,8 @@ function startTask(jid, prompt, options = {}, onProgress, onComplete, onError) {
     btwNotes: [],
     lastStatusText: '',
     fullText: '',
-    cancelled: false
+    cancelled: false,
+    onCancel: onCancel || options.onCancel
   };
 
   activeTasks.set(jid, taskState);
@@ -120,6 +122,7 @@ function startTask(jid, prompt, options = {}, onProgress, onComplete, onError) {
 
   child.on('error', (err) => {
     activeTasks.delete(jid);
+    if (taskState.cancelled) return;
     logger.error({ err }, `Failed to start AGY binary for ${jid}`);
     onError(err);
   });
@@ -128,6 +131,8 @@ function startTask(jid, prompt, options = {}, onProgress, onComplete, onError) {
 }
 
 function handleStreamEvent(taskState, data, onProgress) {
+  if (taskState.cancelled) return;
+
   if (data.event === 'init' && data.conversation_id) {
     taskState.conversationId = data.conversation_id;
   }
@@ -176,12 +181,23 @@ function cancelTask(jid) {
   }
 
   task.cancelled = true;
+
+  if (typeof task.onCancel === 'function') {
+    try {
+      task.onCancel();
+    } catch (e) {
+      logger.warn(`Error executing task onCancel for ${jid}: ${e.message}`);
+    }
+  }
+
   if (task.child) {
     logger.info(`Killing process ${task.child.pid} for chat ${jid}`);
     task.child.kill('SIGTERM');
     setTimeout(() => {
-      if (activeTasks.has(jid)) {
-        task.child.kill('SIGKILL');
+      if (task.child && !task.child.killed) {
+        try {
+          task.child.kill('SIGKILL');
+        } catch (e) {}
       }
     }, 2000);
   }
