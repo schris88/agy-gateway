@@ -1,0 +1,37 @@
+{
+  "name": "agy-gateway",
+  "version": "1.0.0",
+  "description": "WhatsApp Gateway for Antigravity (AGY) Agent - Always online 24/7 daemon with interactive progress updates, /goal, /models, /btw, /cancel, and Raspberry Pi support",
+  "main": "index.js",
+  "type": "commonjs",
+  "bin": {
+    "agy-gateway": "./bin/agy-gateway.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "qr": "node index.js --show-qr"
+  },
+  "keywords": [
+    "antigravity",
+    "agy",
+    "whatsapp",
+    "baileys",
+    "ai-agent",
+    "raspberry-pi",
+    "hermes-agent"
+  ],
+  "author": "Antigravity Team",
+  "license": "MIT",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.18",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "pino": "^9.6.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "devDependencies": {
+    "pino-pretty": "^13.1.3"
+  }
+}

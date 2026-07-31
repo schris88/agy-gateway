@@ -1,0 +1,253 @@
+const { spawn } = require('child_process');
+const readline = require('readline');
+const logger = require('./logger');
+const config = require('./config');
+
+// Store running tasks by WhatsApp chat JID
+const activeTasks = new Map();
+
+/**
+ * Spawns an AGY execution task.
+ * @param {string} jid WhatsApp chat ID
+ * @param {string} prompt Prompt string
+ * @param {object} options Options like { effort: 'high', model: '...', isGoal: false, continueConvId: null }
+ * @param {function} onProgress Callback for status updates (tool calls, thinking, btw notes)
+ * @param {function} onComplete Callback on task success with final response text
+ * @param {function} onError Callback on failure
+ */
+function startTask(jid, prompt, options = {}, onProgress, onComplete, onError) {
+  if (activeTasks.has(jid)) {
+    const existing = activeTasks.get(jid);
+    if (options.isBtw) {
+      existing.btwNotes.push(prompt);
+      logger.info(`Added /btw note to active task for ${jid}: ${prompt}`);
+      if (onProgress) {
+        onProgress(`💬 *Added note to active task:* "${prompt}"`);
+      }
+      return existing;
+    } else {
+      throw new Error('A task is already running in this chat. Use /cancel to stop it or send a note with /btw.');
+    }
+  }
+
+  const args = [
+    '--output-format', 'stream-json',
+    '--dangerously-skip-permissions'
+  ];
+
+  if (options.effort) {
+    args.push('--effort', options.effort);
+  }
+
+  if (options.model) {
+    args.push('--model', options.model);
+  }
+
+  if (options.continueConvId) {
+    args.push('--conversation', options.continueConvId);
+  }
+
+  // Handle prompt argument
+  args.push('-p', prompt);
+
+  logger.info(`Starting AGY process for ${jid} with args: ${args.join(' ')}`);
+
+  const child = spawn(config.agyBinPath, args, {
+    cwd: config.workspaceDir,
+    env: process.env
+  });
+
+  const taskState = {
+    jid,
+    prompt,
+    child,
+    startTime: Date.now(),
+    isGoal: !!options.isGoal,
+    conversationId: null,
+    btwNotes: [],
+    lastStatusText: '',
+    fullText: '',
+    cancelled: false
+  };
+
+  activeTasks.set(jid, taskState);
+
+  const rl = readline.createInterface({
+    input: child.stdout,
+    crlfDelay: Infinity
+  });
+
+  rl.on('line', (line) => {
+    if (!line.trim()) return;
+    try {
+      const data = JSON.parse(line.trim());
+      handleStreamEvent(taskState, data, onProgress);
+    } catch (e) {
+      logger.warn({ line }, 'Failed to parse JSON stream line from agy');
+    }
+  });
+
+  let stderrOutput = '';
+  child.stderr.on('data', (data) => {
+    stderrOutput += data.toString();
+  });
+
+  child.on('close', (code) => {
+    activeTasks.delete(jid);
+
+    if (taskState.cancelled) {
+      logger.info(`Task for ${jid} was cancelled by user.`);
+      return;
+    }
+
+    if (code === 0 && taskState.fullText) {
+      let finalAnswer = taskState.fullText.trim();
+      if (taskState.btwNotes.length > 0) {
+        finalAnswer += `\n\n_Note: Interrupted with ${taskState.btwNotes.length} /btw update(s)._`;
+      }
+      onComplete(finalAnswer, taskState.conversationId);
+    } else if (code === 0 && !taskState.fullText) {
+      onComplete("✅ Task finished with no text output.", taskState.conversationId);
+    } else {
+      logger.error(`AGY process exited with code ${code}: ${stderrOutput}`);
+      onError(new Error(`AGY process exited with code ${code}. ${stderrOutput.slice(-200)}`));
+    }
+  });
+
+  child.on('error', (err) => {
+    activeTasks.delete(jid);
+    logger.error({ err }, `Failed to start AGY binary for ${jid}`);
+    onError(err);
+  });
+
+  return taskState;
+}
+
+function handleStreamEvent(taskState, data, onProgress) {
+  if (data.event === 'init' && data.conversation_id) {
+    taskState.conversationId = data.conversation_id;
+  }
+
+  if (data.event === 'step_update') {
+    const step = data.step_update;
+
+    if (step.state === 'ACTIVE' && step.step_type === 'tool') {
+      const toolName = step.tool_name || (step.tool_info && step.tool_info.name) || 'unknown tool';
+      let paramDesc = '';
+      if (step.tool_info && step.tool_info.parameters) {
+        const params = step.tool_info.parameters;
+        if (params.CommandLine) paramDesc = `: \`${params.CommandLine.slice(0, 60)}\``;
+        else if (params.Query) paramDesc = `: \`${params.Query}\``;
+        else if (params.TargetFile) paramDesc = `: \`${params.TargetFile.split('/').pop()}\``;
+        else if (params.AbsolutePath) paramDesc = `: \`${params.AbsolutePath.split('/').pop()}\``;
+      }
+      const statusMsg = `🛠️ *Tool:* \`${toolName}\`${paramDesc}`;
+      if (statusMsg !== taskState.lastStatusText) {
+        taskState.lastStatusText = statusMsg;
+        if (onProgress) onProgress(statusMsg);
+      }
+    }
+
+    if (step.text_delta) {
+      taskState.fullText += step.text_delta;
+    }
+  }
+
+  if (data.event === 'result' && data.result) {
+    if (data.result.response) {
+      taskState.fullText = data.result.response;
+    }
+  }
+}
+
+/**
+ * Cancels a running task for a specific chat JID
+ */
+function cancelTask(jid) {
+  const task = activeTasks.get(jid);
+  if (!task) {
+    return false;
+  }
+
+  task.cancelled = true;
+  if (task.child) {
+    logger.info(`Killing process ${task.child.pid} for chat ${jid}`);
+    task.child.kill('SIGTERM');
+    setTimeout(() => {
+      if (activeTasks.has(jid)) {
+        task.child.kill('SIGKILL');
+      }
+    }, 2000);
+  }
+  activeTasks.delete(jid);
+  return true;
+}
+
+/**
+ * Checks if a task is running for a JID
+ */
+function isTaskRunning(jid) {
+  return activeTasks.has(jid);
+}
+
+/**
+ * Gets running task info for a JID
+ */
+function getActiveTask(jid) {
+  return activeTasks.get(jid);
+}
+
+/**
+ * Lists all active tasks across all chats
+ */
+function getAllActiveTasks() {
+  const tasks = [];
+  activeTasks.forEach((task, jid) => {
+    tasks.push({
+      jid,
+      prompt: task.prompt,
+      isGoal: task.isGoal,
+      durationMs: Date.now() - task.startTime,
+      conversationId: task.conversationId,
+      btwCount: task.btwNotes.length
+    });
+  });
+  return tasks;
+}
+
+/**
+ * Fetches available models from `agy models`
+ */
+function getAvailableModels() {
+  return new Promise((resolve, reject) => {
+    const child = spawn(config.agyBinPath, ['models'], {
+      cwd: config.workspaceDir,
+      env: process.env
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', d => stdout += d.toString());
+    child.stderr.on('data', d => stderr += d.toString());
+
+    child.on('close', code => {
+      if (code === 0 || stdout.trim().length > 0) {
+        resolve(stdout.trim());
+      } else {
+        reject(new Error(`Failed to list models: ${stderr}`));
+      }
+    });
+
+    child.on('error', err => reject(err));
+  });
+}
+
+module.exports = {
+  startTask,
+  cancelTask,
+  isTaskRunning,
+  getActiveTask,
+  getAllActiveTasks,
+  getAvailableModels
+};

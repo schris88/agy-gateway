@@ -1,0 +1,25 @@
+[Unit]
+Description=AGY Antigravity WhatsApp Gateway Daemon
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/agy-gateway
+ExecStart=/usr/bin/node /home/pi/agy-gateway/index.js
+Restart=always
+RestartSec=10s
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=WHATSAPP_ALLOW_SELF=true
+Environment=WHATSAPP_ALLOWED_NUMBERS=*
+
+# Resource limits & sandbox
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=agy-gateway
+
+[Install]
+WantedBy=multi-user.target
