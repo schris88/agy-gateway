@@ -3,10 +3,12 @@ const {
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
-  delay
+  Browsers
 } = require('@whiskeysockets/baileys');
 const qrcodeTerminal = require('qrcode-terminal');
 const pino = require('pino');
+const fs = require('fs');
+const path = require('path');
 const logger = require('./logger');
 const config = require('./config');
 const { setQrCode, setConnectionStatus } = require('./webServer');
@@ -22,19 +24,38 @@ setInterval(() => {
   }
 }, 3600000);
 
+function clearAuthSession() {
+  if (fs.existsSync(config.authDir)) {
+    logger.info(`Clearing auth directory ${config.authDir} for fresh pairing...`);
+    fs.rmSync(config.authDir, { recursive: true, force: true });
+    fs.mkdirSync(config.authDir, { recursive: true });
+  }
+}
+
 async function startWhatsAppGateway() {
   logger.info(`Initializing Baileys WhatsApp connection (Auth Dir: ${config.authDir})...`);
   setConnectionStatus('CONNECTING');
 
+  // Ensure Auth directory exists
+  if (!fs.existsSync(config.authDir)) {
+    fs.mkdirSync(config.authDir, { recursive: true });
+  }
+
   const { state, saveCreds } = await useMultiFileAuthState(config.authDir);
-  const { version } = await fetchLatestBaileysVersion();
+  const { version, isLatest } = await fetchLatestBaileysVersion();
+  logger.info(`Using Baileys version ${version.join('.')} (isLatest: ${isLatest})`);
 
   sock = makeWASocket({
     version,
     auth: state,
     printQRInTerminal: false,
     logger: pino({ level: 'silent' }),
-    browser: ['AGY Antigravity Gateway', 'Chrome', '1.0.0']
+    browser: Browsers.ubuntu('Chrome'), // Use standard valid desktop browser tuple
+    syncFullHistory: false, // Prevent sync hangs
+    connectTimeoutMs: 60000,
+    defaultQueryTimeoutMs: 60000,
+    keepAliveIntervalMs: 25000,
+    generateHighQualityLinkPreview: true
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -57,13 +78,17 @@ async function startWhatsAppGateway() {
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      logger.warn(`Connection closed due to: ${lastDisconnect?.error?.message || 'unknown'}. Reconnecting: ${shouldReconnect}`);
+      logger.warn(`Connection closed due to status ${statusCode}: ${lastDisconnect?.error?.message || 'unknown'}. Reconnecting: ${shouldReconnect}`);
       setConnectionStatus('DISCONNECTED');
 
-      if (shouldReconnect) {
+      if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
+        logger.error('WhatsApp session logged out or invalid. Clearing auth directory for fresh QR code pairing...');
+        clearAuthSession();
+        setTimeout(startWhatsAppGateway, 3000);
+      } else if (shouldReconnect) {
         setTimeout(startWhatsAppGateway, 5000);
       } else {
-        logger.error('WhatsApp session logged out. Please clear auth_info_baileys and re-scan QR code.');
+        setTimeout(startWhatsAppGateway, 5000);
       }
     } else if (connection === 'open') {
       const me = sock.user;
@@ -88,7 +113,6 @@ async function startWhatsAppGateway() {
       const fromMe = !!msg.key.fromMe;
 
       // Handle Self-Chat:
-      // If message is fromMe, check if WHATSAPP_ALLOW_SELF is enabled
       if (fromMe && !config.whatsappAllowSelf) {
         continue;
       }
@@ -164,5 +188,6 @@ function extractText(message) {
 }
 
 module.exports = {
-  startWhatsAppGateway
+  startWhatsAppGateway,
+  clearAuthSession
 };
