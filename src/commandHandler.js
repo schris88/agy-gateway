@@ -8,8 +8,7 @@ const {
   cancelTask,
   isTaskRunning,
   getActiveTask,
-  getAllActiveTasks,
-  getAvailableModels
+  getAllActiveTasks
 } = require('./agyRunner');
 
 const SESSIONS_FILE = path.join(config.authDir, 'chat_sessions.json');
@@ -178,7 +177,7 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
 🚀 *AGY WhatsApp Gateway Commands*
 
 • */goal <prompt>* - Run a long-running goal task with high reasoning effort & live updates
-• */models* - List all available AI models on AGY
+• */models* - List all available AI models & providers on AGY
 • */status* - Check gateway uptime, active tasks & connection status
 • */reset* or */clear* - Clear conversation history & start a new session
 • */cancel* - Cancel any active running task in this chat
@@ -193,11 +192,30 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
 
   // 6. Handle /models
   if (lowerText === '/models' || lowerText === '!models') {
+    await gatewayRef.sendMessage(jid, '🤖 *Fetching available AGY models & providers...*');
     await gatewayRef.sendTyping(jid);
+
     try {
-      const modelsOutput = await getAvailableModels();
-      const formattedModels = `🤖 *Available AGY Models:*\n\n\`\`\`\n${modelsOutput}\n\`\`\``;
-      await gatewayRef.sendMessage(jid, markdownToWhatsApp(formattedModels));
+      startTask(
+        jid,
+        "List all available AI models, cloud providers, and local inference models configured in your environment briefly.",
+        {},
+        async (progressText) => {
+          // Silent progress for models
+        },
+        async (finalResponse) => {
+          await gatewayRef.sendTyping(jid, false);
+          const formatted = markdownToWhatsApp(`🤖 *Available AGY Models & Providers:*\n\n${finalResponse}`);
+          const chunks = splitMessage(formatted);
+          for (let i = 0; i < chunks.length; i++) {
+            await gatewayRef.sendMessage(jid, chunks[i]);
+          }
+        },
+        async (err) => {
+          await gatewayRef.sendTyping(jid, false);
+          await gatewayRef.sendMessage(jid, `❌ *Failed to fetch models:* ${err.message}`);
+        }
+      );
     } catch (e) {
       await gatewayRef.sendMessage(jid, `❌ Failed to list models: ${e.message}`);
     }
