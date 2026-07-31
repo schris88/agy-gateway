@@ -220,17 +220,26 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
 
   // 8. Handle /skills or /plugins
   if (lowerText === '/skills' || lowerText === '!skills' || lowerText === '/plugins' || lowerText === '!plugins') {
+    await gatewayRef.sendMessage(jid, '🛠️ *Fetching installed AGY Skills & Plugins...*\n_Inspecting workspace skills..._');
     await gatewayRef.sendTyping(jid);
 
     const existingSession = chatSessions.get(jid);
     const continueConvId = existingSession ? existingSession.conversationId : null;
+    let lastProgressSent = Date.now();
 
     try {
       startTask(
         jid,
         "List all installed AGY skills and plugins in this workspace briefly.",
         { continueConvId },
-        async (progressText) => {},
+        async (progressText) => {
+          const now = Date.now();
+          if (now - lastProgressSent > 3500) {
+            lastProgressSent = now;
+            await gatewayRef.sendMessage(jid, markdownToWhatsApp(progressText));
+            await gatewayRef.sendTyping(jid);
+          }
+        },
         async (finalResponse) => {
           await gatewayRef.sendTyping(jid, false);
           const formatted = markdownToWhatsApp(`🛠️ *Native AGY Skills & Plugins:*\n\n${finalResponse}`);
