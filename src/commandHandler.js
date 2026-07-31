@@ -123,9 +123,10 @@ function extractImagePaths(text) {
 /**
  * Scans the AGY conversation brain folder for image files generated during a task.
  */
-function findGeneratedImagesForTask(convId, startTime) {
-  if (!convId) return [];
-  const found = new Set();
+function findGeneratedFilesForTask(convId, startTime) {
+  if (!convId) return { images: [], documents: [] };
+  const images = new Set();
+  const documents = new Set();
   const homeDir = process.env.HOME || os.homedir();
 
   const brainDirs = [
@@ -139,11 +140,14 @@ function findGeneratedImagesForTask(convId, startTime) {
       try {
         const files = fs.readdirSync(brainDir);
         for (const file of files) {
-          if (file.endsWith('.jpg') || file.endsWith('.png') || file.endsWith('.webp')) {
-            const filePath = path.join(brainDir, file);
-            const stat = fs.statSync(filePath);
-            if (stat.mtimeMs >= startTime - 10000) {
-              found.add(filePath);
+          const filePath = path.join(brainDir, file);
+          const stat = fs.statSync(filePath);
+          if (stat.isFile() && stat.mtimeMs >= startTime - 10000) {
+            const ext = path.extname(file).toLowerCase();
+            if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
+              images.add(filePath);
+            } else if (['.pdf', '.csv', '.xlsx', '.docx', '.zip', '.txt', '.html', '.json'].includes(ext)) {
+              documents.add(filePath);
             }
           }
         }
@@ -153,7 +157,11 @@ function findGeneratedImagesForTask(convId, startTime) {
     }
   }
 
-  return Array.from(found);
+  return { images: Array.from(images), documents: Array.from(documents) };
+}
+
+function findGeneratedImagesForTask(convId, startTime) {
+  return findGeneratedFilesForTask(convId, startTime).images;
 }
 
 /**
@@ -520,9 +528,9 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
           saveSessions();
         }
 
-        // Extract image paths referenced in text AND generated inside AGY brain directory
+        // Extract image & document paths referenced in text AND generated inside AGY brain directory
         const textImagePaths = extractImagePaths(finalResponse);
-        const brainImagePaths = findGeneratedImagesForTask(convId, taskStartTime);
+        const { images: brainImagePaths, documents: brainDocPaths } = findGeneratedFilesForTask(convId, taskStartTime);
         const allImagePaths = Array.from(new Set([...textImagePaths, ...brainImagePaths]));
 
         // Format and send text response
@@ -538,6 +546,14 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
           for (const imgPath of allImagePaths) {
             logger.info(`Sending task image to ${jid}: ${imgPath}`);
             await gatewayRef.sendImageMessage(jid, imgPath, '🎨 AGY Generated Image');
+          }
+        }
+
+        // Send all generated document files (PDF, CSV, TXT, ZIP) natively as WhatsApp Document Cards
+        if (gatewayRef.sendDocumentMessage && brainDocPaths.length > 0) {
+          for (const docPath of brainDocPaths) {
+            logger.info(`Sending task document to ${jid}: ${docPath}`);
+            await gatewayRef.sendDocumentMessage(jid, docPath, `📄 *AGY Generated File:* ${path.basename(docPath)}`);
           }
         }
       },
