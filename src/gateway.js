@@ -307,12 +307,17 @@ function isJidAllowed(jid, fromMe, meUser) {
     return config.whatsappAllowedNumbers.some(num => groupId.includes(num));
   }
 
-  // 2. Normalize phone numbers for user and target JID
+  // 2. Normalize phone/LID numbers for logged-in user and target JID
   const myNum = meUser?.id ? meUser.id.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : '';
+  const myLid = meUser?.lid ? meUser.lid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : '';
   const targetNum = jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
-  // 3. Self-Chat Detection: Message is Self-Chat ONLY IF fromMe is true AND target matches logged-in user
-  const isSelfChat = fromMe && (myNum !== '' ? targetNum === myNum : true);
+  // 3. Self-Chat Detection:
+  // In WhatsApp Multi-Device, self-chat messages sent by the user have fromMe=true AND
+  // targetJid matching user's Phone Number, user's LID (@lid), or LID format.
+  const isLidSelfChat = jid.endsWith('@lid');
+  const matchesSelfNum = (myNum && targetNum === myNum) || (myLid && targetNum === myLid);
+  const isSelfChat = fromMe && (isLidSelfChat || matchesSelfNum || (!myNum && !myLid));
 
   if (isSelfChat) {
     return config.whatsappAllowSelf;
