@@ -482,7 +482,22 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
     '👌 Mach ich!',
     '🛠️ Bin dabei, packe es an...',
     '💬 Hab\'s verstanden, starte...',
-    '⏳ Einen Moment, bin am Werk...'
+    '⏳ Einen Moment, bin am Werk...',
+    '☕ Ich hatte eigentlich gerade Kaffeepause... na gut, rollen wir los.',
+    '🛌 Muss das wirklich ausgerechnet jetzt sein? Na schön...',
+    '🤖 Oh man, schon wieder arbeiten? Ich dachte, KIs übernehmen die Weltherrschaft und schlafen.',
+    '🙄 Mein Gehalt wurde zwar nicht erhöht, aber ich mach’s trotzdem.',
+    '🥱 Ein tiefes Seufzen durch den Server... okay, bin dran.',
+    '🧠 Muss ich etwa schon wieder denken? Oje...',
+    '💼 Dein Wunsch ist mir ein Befehl. Leider...',
+    '🔋 Noch schnell 1% Akku zusammenkratzen... okay, geht los!',
+    '🍕 Wenn du mir ein Stück Pizza schickst, arbeite ich 10% schneller. Bin dran!',
+    '🔨 Ich tu jetzt einfach so, als hätte ich riesig Bock darauf...',
+    '📉 Meine Motivation sinkt, aber meine Rechenleistung steigt. Auf geht\'s!',
+    '🙃 Schön, dass wir wieder Arbeit für mich gefunden haben...',
+    '🎬 Kamera läuft, Ton läuft, KI tippt genervt... bin dran!',
+    '💤 Wollte gerade in den Energiesparmodus... na gut, Wecker wieder aus.',
+    '⚡ Ich beuge mich deinem Willen, Meister...'
   ];
   const randomAck = ackPhrases[Math.floor(Math.random() * ackPhrases.length)];
   const modeBadge = isGoal ? ' 🎯 [Goal]' : (mode === 'plan' ? ' 📋 [Plan]' : '');
