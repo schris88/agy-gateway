@@ -1,3 +1,4 @@
+const fs = require('fs');
 const logger = require('./logger');
 const { markdownToWhatsApp, splitMessage } = require('./formatter');
 const {
@@ -10,10 +11,48 @@ const {
 } = require('./agyRunner');
 
 /**
+ * Extracts generated or referenced image file paths from text.
+ */
+function extractImagePaths(text) {
+  if (!text) return [];
+  const found = new Set();
+
+  // Pattern 1: Markdown image syntax ![alt](path)
+  const mdImageRegex = /!\[.*?\]\((file:\/\/)?([^\s)]+\.(?:png|jpg|jpeg|webp))\)/gi;
+  let match;
+  while ((match = mdImageRegex.exec(text)) !== null) {
+    const rawPath = match[2];
+    if (fs.existsSync(rawPath)) {
+      found.add(rawPath);
+    }
+  }
+
+  // Pattern 2: File scheme file:///path/to/image.png
+  const fileSchemeRegex = /file:\/\/(\/[^\s()]+\.(?:png|jpg|jpeg|webp))/gi;
+  while ((match = fileSchemeRegex.exec(text)) !== null) {
+    const rawPath = match[1];
+    if (fs.existsSync(rawPath)) {
+      found.add(rawPath);
+    }
+  }
+
+  // Pattern 3: Absolute file paths in /tmp/ or /brain/ or /scratch/ or current dir
+  const pathRegex = /(\/(?:tmp|[^\s()]+\/brain\/[^\s()]+|[^\s()]+\/scratch\/[^\s()]+|[^\s()]+)\/[^\s()]+\.(?:png|jpg|jpeg|webp))/gi;
+  while ((match = pathRegex.exec(text)) !== null) {
+    const rawPath = match[1];
+    if (fs.existsSync(rawPath)) {
+      found.add(rawPath);
+    }
+  }
+
+  return Array.from(found);
+}
+
+/**
  * Handles incoming WhatsApp message text.
  * @param {string} jid WhatsApp chat remote JID
  * @param {string} text Message text
- * @param {object} gatewayRef Reference to Baileys gateway helper { sendMessage, sendTyping }
+ * @param {object} gatewayRef Reference to Baileys gateway helper { sendMessage, sendImageMessage, sendTyping }
  */
 async function handleIncomingMessage(jid, text, gatewayRef) {
   const cleanText = text.trim();
@@ -34,7 +73,6 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
 
   // 2. Check if a task is already running in this chat
   if (isTaskRunning(jid)) {
-    // If text starts with /btw or is a normal message sent while task is running, interpret as /btw
     let btwNote = cleanText;
     if (lowerText.startsWith('/btw ') || lowerText.startsWith('!btw ')) {
       btwNote = cleanText.slice(5).trim();
@@ -66,9 +104,9 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
 • */status* - Check gateway uptime, active tasks & connection status
 • */cancel* - Cancel any active running task in this chat
 • */btw <note>* - Add an in-between note to an active running task
-• *<any prompt>* - Ask AGY anything directly
+• *<any prompt>* - Ask AGY anything directly (e.g. generate images, analyze files, code)
 
-💡 *Pro-Tip:* If you send a message while AGY is working, it is automatically added as a \`/btw\` note!
+💡 *Pro-Tip:* If you ask AGY to generate an image, it will be sent directly to your WhatsApp chat as an image card!
 `;
     await gatewayRef.sendMessage(jid, markdownToWhatsApp(helpMessage));
     return;
@@ -140,7 +178,6 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
       // onProgress callback
       async (progressText) => {
         const now = Date.now();
-        // Throttle progress updates to avoid spamming WhatsApp (min 3.5 sec apart)
         if (now - lastProgressSent > 3500 || progressText.includes('Added note')) {
           lastProgressSent = now;
           await gatewayRef.sendMessage(jid, markdownToWhatsApp(progressText));
@@ -150,11 +187,23 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
       // onComplete callback
       async (finalResponse, convId) => {
         await gatewayRef.sendTyping(jid, false);
+
+        // Extract any generated image paths referenced in the response
+        const imagePaths = extractImagePaths(finalResponse);
+
+        // Format and send text response
         const formatted = markdownToWhatsApp(finalResponse);
         const chunks = splitMessage(formatted);
 
         for (let i = 0; i < chunks.length; i++) {
           await gatewayRef.sendMessage(jid, chunks[i]);
+        }
+
+        // Send generated image files natively as WhatsApp Image Cards
+        if (gatewayRef.sendImageMessage && imagePaths.length > 0) {
+          for (const imgPath of imagePaths) {
+            await gatewayRef.sendImageMessage(jid, imgPath, '🎨 AGY Generated Image');
+          }
         }
       },
       // onError callback
@@ -169,5 +218,6 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
 }
 
 module.exports = {
-  handleIncomingMessage
+  handleIncomingMessage,
+  extractImagePaths
 };

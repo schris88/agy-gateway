@@ -146,6 +146,25 @@ async function startWhatsAppGateway() {
             logger.error({ err }, `Failed to send WhatsApp message to ${targetJid}`);
           }
         },
+        sendImageMessage: async (targetJid, imagePath, captionText) => {
+          try {
+            if (!fs.existsSync(imagePath)) {
+              logger.warn(`Cannot send image: file does not exist at ${imagePath}`);
+              return;
+            }
+            logger.info(`📤 Sending generated image file ${imagePath} to ${targetJid}`);
+            const sent = await sock.sendMessage(targetJid, {
+              image: fs.readFileSync(imagePath),
+              caption: captionText ? captionText : undefined
+            });
+            if (sent?.key?.id) {
+              gatewaySentMessageIds.add(sent.key.id);
+            }
+            return sent;
+          } catch (err) {
+            logger.error({ err }, `Failed to send WhatsApp image to ${targetJid}`);
+          }
+        },
         sendTyping: async (targetJid, isComposing = true) => {
           try {
             await sock.sendPresenceUpdate(isComposing ? 'composing' : 'paused', targetJid);
