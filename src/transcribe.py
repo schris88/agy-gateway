@@ -6,7 +6,7 @@ def transcribe(audio_path):
     if not os.path.exists(audio_path):
         return None
 
-    # 1. Try Groq Whisper (ultra fast) if GROQ_API_KEY is available
+    # 1. Try Groq Whisper (ultra-fast cloud) if GROQ_API_KEY is available
     groq_key = os.environ.get("GROQ_API_KEY")
     if groq_key:
         try:
@@ -19,7 +19,7 @@ def transcribe(audio_path):
                     response_format="json"
                 )
                 if transcription and hasattr(transcription, "text") and transcription.text:
-                    return transcription.text
+                    return transcription.text.strip()
         except Exception:
             pass
 
@@ -35,17 +35,42 @@ def transcribe(audio_path):
                     file=file
                 )
                 if transcription and hasattr(transcription, "text") and transcription.text:
-                    return transcription.text
+                    return transcription.text.strip()
         except Exception:
             pass
 
-    # 3. Fallback to local whisper if installed
+    # 3. Fast SpeechRecognition engine (Google Web Speech API - free & fast, no key needed)
+    try:
+        import speech_recognition as sr
+        r = sr.Recognizer()
+        with sr.AudioFile(audio_path) as source:
+            audio_data = r.record(source)
+        
+        # Try German first
+        try:
+            text = r.recognize_google(audio_data, language="de-DE")
+            if text and text.strip():
+                return text.strip()
+        except Exception:
+            pass
+
+        # Fallback to English
+        try:
+            text = r.recognize_google(audio_data, language="en-US")
+            if text and text.strip():
+                return text.strip()
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # 4. Fallback to local whisper model if installed
     try:
         import whisper
         model = whisper.load_model("tiny")
         result = model.transcribe(audio_path)
-        if result and "text" in result:
-            return result["text"]
+        if result and "text" in result and result["text"]:
+            return result["text"].strip()
     except Exception:
         pass
 

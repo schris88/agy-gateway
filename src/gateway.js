@@ -127,12 +127,6 @@ async function startWhatsAppGateway() {
         continue;
       }
 
-      // Extract message text or process media (Images, Audio, Voice Notes, Video, Documents)
-      const content = await extractMessageContent(msg);
-      if (!content || !content.text) continue;
-
-      logger.info(`📩 Received message (${content.type}) from ${senderJid} (fromMe: ${fromMe}): "${content.text.slice(0, 70)}"`);
-
       // Construct gateway reference for response sending
       const gatewayRef = {
         sendMessage: async (targetJid, textContent) => {
@@ -174,6 +168,12 @@ async function startWhatsAppGateway() {
         }
       };
 
+      // Extract message text or process media with live progress notifications
+      const content = await extractMessageContent(msg, senderJid, gatewayRef);
+      if (!content || !content.text) continue;
+
+      logger.info(`📩 Received message (${content.type}) from ${senderJid} (fromMe: ${fromMe}): "${content.text.slice(0, 70)}"`);
+
       // Pass to command router
       try {
         await handleIncomingMessage(senderJid, content.text, gatewayRef);
@@ -192,7 +192,7 @@ function isJidAllowed(jid, fromMe) {
   return config.whatsappAllowedNumbers.some(num => cleanNum.endsWith(num) || num.endsWith(cleanNum));
 }
 
-async function extractMessageContent(msg) {
+async function extractMessageContent(msg, senderJid, gatewayRef) {
   const message = msg.message;
   if (!message) return null;
 
@@ -228,13 +228,18 @@ async function extractMessageContent(msg) {
 
   // 3. Audio / Voice message (PTT)
   if (message.audioMessage) {
+    if (gatewayRef && gatewayRef.sendMessage) {
+      await gatewayRef.sendMessage(senderJid, '🎙️ *Voice Message Received!* Downloading and transcribing audio...');
+      await gatewayRef.sendTyping(senderJid);
+    }
+
     try {
       const buffer = await downloadMediaMessage(msg, 'buffer', {});
       const oggPath = path.join('/tmp', `whatsapp_audio_${Date.now()}_${Math.floor(Math.random()*1000)}.ogg`);
       const wavPath = oggPath.replace('.ogg', '.wav');
       fs.writeFileSync(oggPath, buffer);
 
-      // Convert OGG Opus to WAV using ffmpeg if available
+      // Convert OGG Opus to WAV using ffmpeg
       try {
         execSync(`ffmpeg -y -i "${oggPath}" -ar 16000 -ac 1 "${wavPath}" 2>/dev/null`);
       } catch (ffErr) {
@@ -243,21 +248,27 @@ async function extractMessageContent(msg) {
 
       const audioFileToUse = fs.existsSync(wavPath) ? wavPath : oggPath;
 
-      // Try transcription using transcribe script if available
+      // Try fast SpeechRecognition
       let transcriptionText = null;
       const transcribeScript = path.join(__dirname, 'transcribe.py');
       if (fs.existsSync(transcribeScript)) {
         try {
-          transcriptionText = execSync(`python3 "${transcribeScript}" "${audioFileToUse}"`, { encoding: 'utf-8' }).trim();
+          transcriptionText = execSync(`python3 "${transcribeScript}" "${audioFileToUse}"`, { encoding: 'utf-8', timeout: 15000 }).trim();
         } catch (tErr) {
-          logger.warn('Voice transcription script produced no text output');
+          logger.warn(`Voice transcription produced no output or timed out: ${tErr.message}`);
         }
       }
 
       let promptText = '';
       if (transcriptionText) {
-        promptText = `[Received Voice Message. Transcribed Text: "${transcriptionText}"] (Audio file saved at ${audioFileToUse}). Please respond to this voice message request.`;
+        if (gatewayRef && gatewayRef.sendMessage) {
+          await gatewayRef.sendMessage(senderJid, `🎙️ *Voice Message Transcribed:* "${transcriptionText}"`);
+        }
+        promptText = `[Voice Message Transcribed: "${transcriptionText}"] (Audio file: ${audioFileToUse}). Please process this user request.`;
       } else {
+        if (gatewayRef && gatewayRef.sendMessage) {
+          await gatewayRef.sendMessage(senderJid, `🎙️ *Audio Received!* Forwarding voice note to AGY for processing...`);
+        }
         promptText = `[Received Voice Message Audio File saved at: ${audioFileToUse}]. Transcribe this audio file and fulfill the request.`;
       }
 
