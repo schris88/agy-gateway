@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const logger = require('./logger');
 const config = require('./config');
 const { markdownToWhatsApp, splitMessage } = require('./formatter');
@@ -126,7 +127,7 @@ function findGeneratedImagesForTask(convId, startTime) {
   if (!convId) return [];
   const found = new Set();
 
-  const homeDir = process.env.HOME || '/home/sxlib';
+  const homeDir = process.env.HOME || os.homedir();
   const brainDir = path.join(homeDir, '.gemini/antigravity-cli/brain', convId);
 
   if (fs.existsSync(brainDir)) {

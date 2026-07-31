@@ -5,8 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/sxlib/agy-gateway
-ExecStart=/usr/bin/node /home/sxlib/agy-gateway/index.js
+# Replace 'username' with your actual Linux user name or use %h/agy-gateway
+WorkingDirectory=%h/agy-gateway
+ExecStart=/usr/bin/node %h/agy-gateway/index.js
 Restart=always
 RestartSec=10s
 Environment=NODE_ENV=production

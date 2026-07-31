@@ -104,8 +104,8 @@ npm install
 Create a `.env` file or modify the defaults:
 
 ```env
-# Path to AGY CLI binary
-AGY_BIN_PATH=/home/sxlib/.local/bin/agy
+# Path to AGY CLI binary (e.g. ~/.local/bin/agy or /usr/local/bin/agy)
+AGY_BIN_PATH=/home/username/.local/bin/agy
 
 # Enable Self-Chat (messaging yourself in WhatsApp)
 WHATSAPP_ALLOW_SELF=true
