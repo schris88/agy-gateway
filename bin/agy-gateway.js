@@ -22,7 +22,8 @@ Options:
 Environment Variables (.env file supported):
   AGY_BIN_PATH             Path to agy binary (default: auto-detected)
   WHATSAPP_ALLOW_SELF      Allow processing self-chat messages (default: true)
-  WHATSAPP_ALLOWED_NUMBERS Allowed phone numbers separated by comma, or * for all
+  WHATSAPP_ALLOW_GROUPS    Allow processing group chats (default: false)
+  WHATSAPP_ALLOWED_NUMBERS Allowed phone numbers separated by comma (default: empty / self-chat only)
   PORT                     Web server port (default: 3000)
   AUTH_DIR                 Directory for Baileys session auth
 `);

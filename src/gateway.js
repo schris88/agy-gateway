@@ -235,17 +235,11 @@ async function startWhatsAppGateway() {
       processedIncomingMessageIds.add(messageId);
 
       const fromMe = !!msg.key.fromMe;
-
-      // Handle Self-Chat:
-      if (fromMe && !config.whatsappAllowSelf) {
-        continue;
-      }
-
       const senderJid = msg.key.remoteJid;
 
-      // Filter allowed phone numbers
-      if (!isJidAllowed(senderJid, fromMe)) {
-        logger.info(`Ignoring message from non-whitelisted sender: ${senderJid}`);
+      // Filter allowed JIDs (self-chat only by default, groups blocked by default)
+      if (!isJidAllowed(senderJid, fromMe, sock?.user)) {
+        logger.info(`Ignoring message from non-whitelisted sender/chat: ${senderJid} (fromMe: ${fromMe})`);
         continue;
       }
 
@@ -272,7 +266,7 @@ async function startWhatsAppGateway() {
       const senderJid = reaction.key.remoteJid;
       const fromMe = !!reaction.key.fromMe;
 
-      if (!isJidAllowed(senderJid, fromMe)) continue;
+      if (!isJidAllowed(senderJid, fromMe, sock?.user)) continue;
 
       const emoji = reaction.reaction?.text;
       const targetMsgId = reaction.key.id;
@@ -300,12 +294,40 @@ async function startWhatsAppGateway() {
   });
 }
 
-function isJidAllowed(jid, fromMe) {
-  if (fromMe && config.whatsappAllowSelf) return true;
-  if (config.whatsappAllowedNumbers.includes('*')) return true;
+function isJidAllowed(jid, fromMe, meUser) {
+  if (!jid) return false;
 
-  const cleanNum = jid.split('@')[0].replace(/[^0-9]/g, '');
-  return config.whatsappAllowedNumbers.some(num => cleanNum.endsWith(num) || num.endsWith(cleanNum));
+  // 1. Group Chat Filter: Block groups by default unless WHATSAPP_ALLOW_GROUPS=true
+  if (jid.endsWith('@g.us')) {
+    if (!config.whatsappAllowGroups) {
+      return false;
+    }
+    const groupId = jid.split('@')[0];
+    if (config.whatsappAllowedNumbers.includes('*')) return true;
+    return config.whatsappAllowedNumbers.some(num => groupId.includes(num));
+  }
+
+  // 2. Normalize phone numbers for user and target JID
+  const myNum = meUser?.id ? meUser.id.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : '';
+  const targetNum = jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+
+  // 3. Self-Chat Detection: Message is Self-Chat ONLY IF fromMe is true AND target matches logged-in user
+  const isSelfChat = fromMe && (myNum !== '' ? targetNum === myNum : true);
+
+  if (isSelfChat) {
+    return config.whatsappAllowSelf;
+  }
+
+  // 4. External Chat (incoming from other contact, or outgoing in other contact's chat)
+  if (config.whatsappAllowedNumbers.includes('*')) {
+    return true;
+  }
+
+  if (!config.whatsappAllowedNumbers.length) {
+    return false;
+  }
+
+  return config.whatsappAllowedNumbers.some(num => targetNum.endsWith(num) || num.endsWith(targetNum));
 }
 
 async function extractMessageContent(msg, senderJid, gatewayRef) {
