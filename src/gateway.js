@@ -324,17 +324,22 @@ async function extractMessageContent(msg, senderJid, gatewayRef) {
     try {
       const buffer = await downloadMediaMessage(msg, 'buffer', {});
       const oggPath = path.join('/tmp', `whatsapp_audio_${Date.now()}_${Math.floor(Math.random()*1000)}.ogg`);
+      const flacPath = oggPath.replace('.ogg', '.flac');
       const wavPath = oggPath.replace('.ogg', '.wav');
       fs.writeFileSync(oggPath, buffer);
 
-      // Convert OGG Opus to WAV using ffmpeg
+      // Convert OGG Opus to 16kHz mono FLAC (and WAV fallback) using ffmpeg
       try {
-        execSync(`ffmpeg -y -i "${oggPath}" -ar 16000 -ac 1 "${wavPath}" 2>/dev/null`);
+        execSync(`ffmpeg -y -i "${oggPath}" -ar 16000 -ac 1 "${flacPath}" 2>/dev/null`);
       } catch (ffErr) {
-        logger.warn('ffmpeg conversion failed, using ogg file');
+        try {
+          execSync(`ffmpeg -y -i "${oggPath}" -ar 16000 -ac 1 "${wavPath}" 2>/dev/null`);
+        } catch (ffWavErr) {
+          logger.warn('ffmpeg FLAC and WAV conversion failed, using ogg file');
+        }
       }
 
-      const audioFileToUse = fs.existsSync(wavPath) ? wavPath : oggPath;
+      const audioFileToUse = fs.existsSync(flacPath) ? flacPath : (fs.existsSync(wavPath) ? wavPath : oggPath);
 
       // Try fast SpeechRecognition
       let transcriptionText = null;
