@@ -41,7 +41,7 @@ While Hermes Agent provided a solid initial integration, relying on Chinese LLMs
   - Intermediate status reporting when AGY executes tools (e.g. `🛠️ Tool: run_command: git status`).
   - Automatic Markdown-to-WhatsApp text formatting (`*bold*`, `_italic_`, ` ```code``` `).
   - Smart message splitting for responses exceeding WhatsApp's character limit (>4000 chars).
-- **🎯 Slash Commands & Functions (`/goal`, `/plan`, `/remind`, `/export`, `/models`, `/skills`, `/status`, `/cancel`, `/cleanup`)**:
+- **🎯 Built-in Gateway Commands (`/goal`, `/plan`, `/remind`, `/export`, `/models`, `/skills`, `/status`, `/cancel`, `/cleanup`)**:
   - `/goal <prompt>` — Spawns long-running goal tasks with high reasoning effort and step-by-step reporting.
   - `/plan <prompt>` — Executes planning mode before implementation.
   - `/remind <time> <msg>` — Schedules proactive WhatsApp reminders (e.g. `/remind 10m Check server`).
@@ -51,6 +51,9 @@ While Hermes Agent provided a solid initial integration, relying on Chinese LLMs
   - `/status` — Displays gateway uptime, connection state, memory usage, and active tasks.
   - `/cancel` — Instantly terminates the active process for the chat.
   - `/cleanup` — Manually triggers temporary media folder cleanup.
+- **⚡ All AGY Slash Commands & Custom Skills Supported**:
+  - You are **not limited** to the gateway commands above! You can send **ANY** slash command or skill installed in AGY (e.g. `/caveman`, `/learn`, `/find-skills`, `/clean-code`, `/a11y-debugging`, `/troubleshooting`, `/grill-me`, etc.).
+  - The gateway forwards any slash prompt directly to AGY's skill engine, executing it with full functionality!
 - **👍 WhatsApp Emoji Reaction Feedback System**:
   - Long-press any AGY response and react with emojis (👍, 👎, ❤️, 🔥, 💡).
   - Positive reactions (👍 / ❤️ / 🔥) automatically save the response pattern to local feedback memory and sync to your **Obsidian Vault (`antigravity_memory.md`)** for continuous AGY improvement!
