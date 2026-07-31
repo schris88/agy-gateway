@@ -335,16 +335,51 @@ function isJidAllowed(jid, fromMe, meUser) {
   return config.whatsappAllowedNumbers.some(num => targetNum.endsWith(num) || num.endsWith(targetNum));
 }
 
+function extractQuotedContext(message) {
+  if (!message) return '';
+  const contextInfo =
+    message.extendedTextMessage?.contextInfo ||
+    message.imageMessage?.contextInfo ||
+    message.videoMessage?.contextInfo ||
+    message.audioMessage?.contextInfo ||
+    message.documentMessage?.contextInfo;
+
+  if (!contextInfo?.quotedMessage) return '';
+
+  const q = contextInfo.quotedMessage;
+  let quotedText = '';
+  if (q.conversation) {
+    quotedText = q.conversation;
+  } else if (q.extendedTextMessage?.text) {
+    quotedText = q.extendedTextMessage.text;
+  } else if (q.imageMessage?.caption) {
+    quotedText = `[Image: "${q.imageMessage.caption}"]`;
+  } else if (q.videoMessage?.caption) {
+    quotedText = `[Video: "${q.videoMessage.caption}"]`;
+  } else if (q.documentMessage?.fileName || q.documentMessage?.caption) {
+    quotedText = `[Document: "${q.documentMessage.fileName || q.documentMessage.caption}"]`;
+  } else if (q.audioMessage) {
+    quotedText = '[Voice Message]';
+  }
+
+  if (quotedText) {
+    return `[Replying to quoted message: "${quotedText}"]\n\n`;
+  }
+  return '';
+}
+
 async function extractMessageContent(msg, senderJid, gatewayRef) {
   const message = msg.message;
   if (!message) return null;
 
+  const quotedPrefix = extractQuotedContext(message);
+
   // 1. Text message
   if (message.conversation) {
-    return { type: 'text', text: message.conversation };
+    return { type: 'text', text: quotedPrefix + message.conversation };
   }
   if (message.extendedTextMessage && message.extendedTextMessage.text) {
-    return { type: 'text', text: message.extendedTextMessage.text };
+    return { type: 'text', text: quotedPrefix + message.extendedTextMessage.text };
   }
 
   // 2. Image message
