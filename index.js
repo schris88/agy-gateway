@@ -30,7 +30,11 @@ async function main() {
   // 1. Start Web Dashboard
   startWebServer();
 
-  // 2. Start WhatsApp Gateway connection
+  // 2. Start Auto Cleanup Scheduler (runs daily to clean media older than 7 days)
+  const { startAutoCleanupScheduler } = require('./src/cleanup');
+  startAutoCleanupScheduler();
+
+  // 3. Start WhatsApp Gateway connection
   await startWhatsAppGateway();
 }
 

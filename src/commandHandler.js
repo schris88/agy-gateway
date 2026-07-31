@@ -181,7 +181,15 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
     return;
   }
 
-  // 3. Handle /export <file_path>
+  // 3. Handle /cleanup
+  if (lowerText === '/cleanup' || lowerText === '!cleanup') {
+    const { cleanTmpMediaFiles } = require('./cleanup');
+    const { removedCount, freedMb } = cleanTmpMediaFiles(0); // Clean all temporary files on explicit command
+    await gatewayRef.sendMessage(jid, `🧹 *Media Cleanup Complete!*\n\n• Removed: *${removedCount} file(s)*\n• Space Freed: *${freedMb} MB*`);
+    return;
+  }
+
+  // 4. Handle /export <file_path>
   if (lowerText.startsWith('/export ') || lowerText.startsWith('!export ')) {
     const targetPath = cleanText.slice(8).trim();
     if (!targetPath) {
