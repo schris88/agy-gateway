@@ -137,9 +137,11 @@ function handleStreamEvent(taskState, data, onProgress) {
       if (step.tool_info && step.tool_info.parameters) {
         const params = step.tool_info.parameters;
         if (params.CommandLine) paramDesc = `: \`${params.CommandLine.slice(0, 60)}\``;
-        else if (params.Query) paramDesc = `: \`${params.Query}\``;
+        else if (params.Query || params.query) paramDesc = `: \`${params.Query || params.query}\``;
         else if (params.TargetFile) paramDesc = `: \`${params.TargetFile.split('/').pop()}\``;
         else if (params.AbsolutePath) paramDesc = `: \`${params.AbsolutePath.split('/').pop()}\``;
+        else if (params.Url || params.URL || params.url) paramDesc = `: \`${params.Url || params.URL || params.url}\``;
+        else if (params.prompt || params.Prompt) paramDesc = `: \`${(params.prompt || params.Prompt).slice(0, 50)}\``;
       }
       const statusMsg = `🛠️ *Tool:* \`${toolName}\`${paramDesc}`;
       if (statusMsg !== taskState.lastStatusText) {

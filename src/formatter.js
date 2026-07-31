@@ -11,18 +11,18 @@ function markdownToWhatsApp(text) {
 
   let formatted = text;
 
-  // Preserve multi-line code blocks
+  // Preserve multi-line code blocks using non-colliding delimiter @@CODE_BLOCK_X@@
   const codeBlocks = [];
   formatted = formatted.replace(/```(?:[a-zA-Z0-9_-]+)?\n([\s\S]*?)```/g, (match, code) => {
-    const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
+    const placeholder = `@@CODE_BLOCK_${codeBlocks.length}@@`;
     codeBlocks.push(`\`\`\`\n${code.trim()}\n\`\`\``);
     return placeholder;
   });
 
-  // Preserve inline code
+  // Preserve inline code using non-colliding delimiter @@INLINE_CODE_X@@
   const inlineCodes = [];
   formatted = formatted.replace(/`([^`]+)`/g, (match, code) => {
-    const placeholder = `__INLINE_CODE_${inlineCodes.length}__`;
+    const placeholder = `@@INLINE_CODE_${inlineCodes.length}@@`;
     inlineCodes.push(`\`${code}\``);
     return placeholder;
   });
@@ -34,11 +34,6 @@ function markdownToWhatsApp(text) {
   formatted = formatted.replace(/\*\*(.*?)\*\*/g, '*$1*');
   formatted = formatted.replace(/__(.*?)__/g, '*$1*');
 
-  // Convert italic *text* (that wasn't converted from bold) to _text_ if wrapped with single asterisk not adjacent to alphanumeric
-  // But standard markdown single asterisk or underscore for italic:
-  // Convert _italic_ or *italic*
-  formatted = formatted.replace(/(?<![*_])_([^_]+)_(?![*_])/g, '_$1_');
-
   // Convert strikethrough ~~text~~ to ~text~
   formatted = formatted.replace(/~~(.*?)~~/g, '~$1~');
 
@@ -47,12 +42,12 @@ function markdownToWhatsApp(text) {
 
   // Restore inline codes
   inlineCodes.forEach((code, index) => {
-    formatted = formatted.replace(`__INLINE_CODE_${index}__`, code);
+    formatted = formatted.replace(`@@INLINE_CODE_${index}@@`, code);
   });
 
   // Restore code blocks
   codeBlocks.forEach((code, index) => {
-    formatted = formatted.replace(`__CODE_BLOCK_${index}__`, code);
+    formatted = formatted.replace(`@@CODE_BLOCK_${index}@@`, code);
   });
 
   return formatted.trim();
