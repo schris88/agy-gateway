@@ -287,7 +287,7 @@ async function extractMessageContent(msg, senderJid, gatewayRef) {
       fs.writeFileSync(filePath, buffer);
 
       const caption = message.imageMessage.caption ? ` Caption: "${message.imageMessage.caption}"` : '';
-      const promptText = `[Received Image File saved at: ${filePath}]${caption} Please inspect and analyze this image to fulfill the request.`;
+      const promptText = `[Received Image File saved at: ${filePath}]${caption} Please inspect and analyze this image to fulfill the request. If the user asks to edit, modify, transform, or generate an image based on this photo, call the generate_image tool with ImagePaths set to ["${filePath}"].`;
 
       logger.info(`Downloaded image to ${filePath} (${buffer.length} bytes)`);
       return { type: 'image', text: promptText, filePath };

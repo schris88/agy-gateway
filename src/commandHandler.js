@@ -126,24 +126,30 @@ function extractImagePaths(text) {
 function findGeneratedImagesForTask(convId, startTime) {
   if (!convId) return [];
   const found = new Set();
-
   const homeDir = process.env.HOME || os.homedir();
-  const brainDir = path.join(homeDir, '.gemini/antigravity-cli/brain', convId);
 
-  if (fs.existsSync(brainDir)) {
-    try {
-      const files = fs.readdirSync(brainDir);
-      for (const file of files) {
-        if (file.endsWith('.jpg') || file.endsWith('.png') || file.endsWith('.webp')) {
-          const filePath = path.join(brainDir, file);
-          const stat = fs.statSync(filePath);
-          if (stat.mtimeMs >= startTime - 10000) {
-            found.add(filePath);
+  const brainDirs = [
+    path.join(homeDir, '.gemini/antigravity-cli/brain', convId),
+    path.join(homeDir, '.gemini/antigravity-ide/brain', convId),
+    path.join(homeDir, '.gemini/brain', convId)
+  ];
+
+  for (const brainDir of brainDirs) {
+    if (fs.existsSync(brainDir)) {
+      try {
+        const files = fs.readdirSync(brainDir);
+        for (const file of files) {
+          if (file.endsWith('.jpg') || file.endsWith('.png') || file.endsWith('.webp')) {
+            const filePath = path.join(brainDir, file);
+            const stat = fs.statSync(filePath);
+            if (stat.mtimeMs >= startTime - 10000) {
+              found.add(filePath);
+            }
           }
         }
+      } catch (e) {
+        logger.warn(`Error scanning brain dir ${brainDir}: ${e.message}`);
       }
-    } catch (e) {
-      logger.warn(`Error scanning brain dir ${brainDir}: ${e.message}`);
     }
   }
 
