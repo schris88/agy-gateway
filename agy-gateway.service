@@ -5,15 +5,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# Replace 'username' with your actual Linux user name or use %h/agy-gateway
 WorkingDirectory=%h/agy-gateway
 ExecStart=/usr/bin/node %h/agy-gateway/index.js
 Restart=always
 RestartSec=10s
 Environment=NODE_ENV=production
-Environment=PORT=3000
-Environment=WHATSAPP_ALLOW_SELF=true
-Environment=WHATSAPP_ALLOWED_NUMBERS=*
+EnvironmentFile=%h/agy-gateway/.env
 
 LimitNOFILE=65536
 StandardOutput=journal

@@ -27,11 +27,24 @@ if ! command -v agy &> /dev/null && [ ! -f "$HOME/.local/bin/agy" ]; then
     echo "   Ensure Antigravity AGY CLI is installed and configured."
 fi
 
-# 3. Install NPM dependencies
-echo "📦 Installing npm dependencies..."
-npm install
+# 4. Configure .env Security Whitelist
+if [ ! -f ".env" ]; then
+    echo ""
+    echo "🔒 Security Configuration:"
+    read -p "Enter allowed phone numbers (comma-separated, e.g. 4917643318140, or press Enter for Self-Chat/All): " USER_NUM
+    ALLOWED="${USER_NUM:-*}"
+    cat <<EOF > .env
+AGY_BIN_PATH=$HOME/.local/bin/agy
+WHATSAPP_ALLOW_SELF=true
+WHATSAPP_ALLOWED_NUMBERS=${ALLOWED}
+PORT=3000
+AUTH_DIR=./auth_info_baileys
+LOG_LEVEL=info
+EOF
+    echo "✅ Created .env with WHATSAPP_ALLOWED_NUMBERS=${ALLOWED}"
+fi
 
-# 4. Link CLI binary globally
+# 5. Link CLI binary globally
 echo "🔗 Linking agy-gateway CLI command..."
 sudo npm link || npm link
 
@@ -57,6 +70,7 @@ ExecStart=${NODE_BIN} ${CURRENT_DIR}/index.js
 Restart=always
 RestartSec=10s
 Environment=NODE_ENV=production
+EnvironmentFile=${CURRENT_DIR}/.env
 
 LimitNOFILE=65536
 StandardOutput=journal
