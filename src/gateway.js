@@ -359,19 +359,25 @@ async function extractMessageContent(msg, senderJid, gatewayRef) {
         if (gatewayRef && gatewayRef.sendMessage) {
           await gatewayRef.sendMessage(
             senderJid,
-            `🎙️ *Voice Message Transcribed:*\n💬 _"${transcriptionText}"_\n\n🤖 *Step 2/2:* Forwarding request to AGY AI agent...`
+            `🎙️ *Voice Message Transcribed:*\n💬 _"${transcriptionText}"_\n\n🤖 *Step 2/2:* Processing request with AGY...`
           );
         }
-        promptText = `[Voice Message Transcribed: "${transcriptionText}"] (Audio file: ${audioFileToUse}).\n\nCRITICAL FORMATTING INSTRUCTION: Begin your final response with: "🗣️ *Understood Request:* \\"${transcriptionText}\\"" on the first line so the user clearly sees what voice message was processed. Then fulfill the request.`;
+        promptText = `[Voice Message Transcribed: "${transcriptionText}"] (Audio: ${audioFileToUse}). Start response with: "🗣️ *Understood:* \\"${transcriptionText}\\"". Fulfill the request.`;
       } else {
         if (gatewayRef && gatewayRef.sendMessage) {
           await gatewayRef.sendMessage(
             senderJid,
-            `🎙️ *Audio Note Received!*\n⚠️ *Note:* Fast local transcription produced no output.\n🤖 *Step 2/2:* Forwarding raw voice note to AGY for direct audio transcription & execution...`
+            `🎙️ *Audio Note Received!*\n🤖 *Step 2/2:* Forwarding voice note to AGY for multi-modal processing...`
           );
         }
-        promptText = `[Received Voice Message Audio File saved at: ${audioFileToUse}].\n\nCRITICAL FORMATTING INSTRUCTION: First transcribe this audio file, then begin your final response with: "🗣️ *Understood Request:* \\"<your transcription>\\"" on the very first line so the user knows exactly what you heard. Then fulfill the user's request.`;
+        promptText = `[Received Voice Audio File: ${audioFileToUse}]. Transcribe audio and start response with: "🗣️ *Understood:* \\"<transcription>\\"". Fulfill the request.`;
       }
+
+      // Cleanup unused temporary audio formats to save disk space
+      try {
+        if (fs.existsSync(oggPath) && audioFileToUse !== oggPath) fs.unlinkSync(oggPath);
+        if (fs.existsSync(wavPath) && audioFileToUse !== wavPath) fs.unlinkSync(wavPath);
+      } catch (e) {}
 
       logger.info(`Downloaded voice note to ${audioFileToUse} (${buffer.length} bytes)`);
       return { type: 'audio', text: promptText, filePath: audioFileToUse };

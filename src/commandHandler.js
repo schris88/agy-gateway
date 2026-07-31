@@ -445,9 +445,21 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
     return;
   }
 
-  // Retrieve active session conversation ID for multi-turn history continuity
+  // Retrieve active session conversation ID for multi-turn history continuity (auto-reset after 24h TTL)
   const existingSession = chatSessions.get(jid);
-  const continueConvId = existingSession ? existingSession.conversationId : null;
+  const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+  let continueConvId = null;
+
+  if (existingSession) {
+    if (Date.now() - (existingSession.lastUpdated || 0) < SESSION_TTL_MS) {
+      continueConvId = existingSession.conversationId;
+    } else {
+      logger.info(`Session for ${jid} expired (>24h). Starting fresh session.`);
+      chatSessions.delete(jid);
+      saveSessions();
+    }
+  }
+
   const taskStartTime = Date.now();
 
   // 13. Start Prompt Execution with Interactive Progress

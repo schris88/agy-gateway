@@ -22,6 +22,8 @@ def transcribe(audio_path):
     try:
         import speech_recognition as sr
         r = sr.Recognizer()
+        r.dynamic_energy_threshold = False
+        r.operation_timeout = 8
         with sr.AudioFile(audio_path) as source:
             audio_data = r.record(source)
         
