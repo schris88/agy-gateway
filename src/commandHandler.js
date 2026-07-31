@@ -130,7 +130,7 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
   if (lowerText === '/reset' || lowerText === '!reset' || lowerText === '/clear' || lowerText === '!clear' || lowerText === '/new') {
     chatSessions.delete(jid);
     saveSessions();
-    await gatewayRef.sendMessage(jid, '🧹 *Conversation session reset!* Starting a new fresh conversation.');
+    await gatewayRef.sendMessage(jid, '🧹 *AGY Conversation Session Reset!* Starting a new fresh session.');
     return;
   }
 
@@ -138,7 +138,7 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
   if (lowerText === '/cancel' || lowerText === '!cancel') {
     const cancelled = cancelTask(jid);
     if (cancelled) {
-      await gatewayRef.sendMessage(jid, '🛑 *Task cancelled successfully.*');
+      await gatewayRef.sendMessage(jid, '🛑 *AGY Task cancelled successfully.*');
     } else {
       await gatewayRef.sendMessage(jid, 'ℹ️ No active task is currently running in this chat.');
     }
@@ -174,38 +174,65 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
     const hasHistory = !!session?.conversationId;
 
     const helpMessage = `
-🚀 *AGY WhatsApp Gateway Commands*
+🚀 *Native AGY Agent Functions & Slash Commands*
 
-• */goal <prompt>* - Run a long-running goal task with high reasoning effort & live updates
-• */models* - List all available AI models & providers on AGY
-• */status* - Check gateway uptime, active tasks & connection status
-• */reset* or */clear* - Clear conversation history & start a new session
-• */cancel* - Cancel any active running task in this chat
-• */btw <note>* - Add an in-between note to an active running task
-• *<any prompt>* - Ask AGY anything directly
+• */goal <prompt>* - Long-running goal task with high reasoning effort & live updates
+• */models* - Native AGY models (Gemini 3.6 Flash, Gemini 3.1 Pro, Claude Sonnet 4-6)
+• */agents* - Native AGY subagents (research, self)
+• */skills* or */plugins* - Installed AGY skills & plugin extensions
+• */status* - Gateway status, active chat session & uptime
+• */reset* or */clear* - Clear chat history & start fresh AGY session
+• */cancel* - Cancel active running task
+• */btw <note>* - Inject mid-task update
+• *<any prompt>* - Ask AGY directly (voice, text, image edit, code)
 
-💡 *Memory Status:* ${hasHistory ? '🧠 *Active session memory enabled*' : '🆕 *New session*'}
+💡 *AGY Context Memory:* ${hasHistory ? '🧠 *Active session memory enabled*' : '🆕 *New session*'}
 `;
     await gatewayRef.sendMessage(jid, markdownToWhatsApp(helpMessage));
     return;
   }
 
-  // 6. Handle /models
+  // 6. Handle /models (Native AGY CLI Context)
   if (lowerText === '/models' || lowerText === '!models') {
-    await gatewayRef.sendMessage(jid, '🤖 *Fetching available AGY models & providers...*');
+    const modelsMessage = `
+🤖 *Native AGY Models*
+
+• *Gemini 3.6 Flash* (low | medium | high effort) - Default fast reasoning engine
+• *Gemini 3.1 Pro* (low | medium | high effort) - Deep reasoning & complex architecture
+• *Claude Sonnet 4-6* - Anthropic Sonnet model via AGY backend
+`;
+    await gatewayRef.sendMessage(jid, markdownToWhatsApp(modelsMessage));
+    return;
+  }
+
+  // 7. Handle /agents (Native AGY Subagents)
+  if (lowerText === '/agents' || lowerText === '!agents' || lowerText === '/agent') {
+    const agentsMessage = `
+👥 *Native AGY Subagents*
+
+• *research* - Read-only subagent for codebase exploration & web research
+• *self* - Subagent inheriting full parent tools, system prompt & configuration
+`;
+    await gatewayRef.sendMessage(jid, markdownToWhatsApp(agentsMessage));
+    return;
+  }
+
+  // 8. Handle /skills or /plugins
+  if (lowerText === '/skills' || lowerText === '!skills' || lowerText === '/plugins' || lowerText === '!plugins') {
     await gatewayRef.sendTyping(jid);
+
+    const existingSession = chatSessions.get(jid);
+    const continueConvId = existingSession ? existingSession.conversationId : null;
 
     try {
       startTask(
         jid,
-        "List all available AI models, cloud providers, and local inference models configured in your environment briefly.",
-        {},
-        async (progressText) => {
-          // Silent progress for models
-        },
+        "List all installed AGY skills and plugins in this workspace briefly.",
+        { continueConvId },
+        async (progressText) => {},
         async (finalResponse) => {
           await gatewayRef.sendTyping(jid, false);
-          const formatted = markdownToWhatsApp(`🤖 *Available AGY Models & Providers:*\n\n${finalResponse}`);
+          const formatted = markdownToWhatsApp(`🛠️ *Native AGY Skills & Plugins:*\n\n${finalResponse}`);
           const chunks = splitMessage(formatted);
           for (let i = 0; i < chunks.length; i++) {
             await gatewayRef.sendMessage(jid, chunks[i]);
@@ -213,16 +240,16 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
         },
         async (err) => {
           await gatewayRef.sendTyping(jid, false);
-          await gatewayRef.sendMessage(jid, `❌ *Failed to fetch models:* ${err.message}`);
+          await gatewayRef.sendMessage(jid, `❌ *Failed to list skills:* ${err.message}`);
         }
       );
     } catch (e) {
-      await gatewayRef.sendMessage(jid, `❌ Failed to list models: ${e.message}`);
+      await gatewayRef.sendMessage(jid, `❌ Failed to list skills: ${e.message}`);
     }
     return;
   }
 
-  // 7. Handle /status
+  // 9. Handle /status
   if (lowerText === '/status' || lowerText === '!status') {
     const activeTasks = getAllActiveTasks();
     const uptimeMin = Math.round(process.uptime() / 60);
@@ -241,7 +268,7 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
     return;
   }
 
-  // 8. Handle /goal <prompt>
+  // 10. Handle /goal <prompt>
   let isGoal = false;
   let prompt = cleanText;
 
@@ -260,10 +287,10 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
   const continueConvId = existingSession ? existingSession.conversationId : null;
   const taskStartTime = Date.now();
 
-  // 9. Start Prompt Execution with Interactive Progress
+  // 11. Start Prompt Execution with Interactive Progress
   const initialAck = isGoal
-    ? `🎯 *Goal Task Received!* Initializing high-reasoning agent pipeline...\n_${continueConvId ? 'Continuing conversation history' : 'New conversation'}. Send /cancel to stop, or reply with notes anytime._`
-    : `⏳ *AGY is thinking...*\n_${continueConvId ? 'Continuing conversation history' : 'New conversation'}. Send /cancel to stop, or reply with notes anytime._`;
+    ? `🎯 *AGY Goal Task Received!* Initializing high-reasoning agent pipeline...\n_${continueConvId ? 'Continuing AGY conversation' : 'New AGY conversation'}. Send /cancel to stop, or reply with notes anytime._`
+    : `⏳ *AGY is thinking...*\n_${continueConvId ? 'Continuing AGY conversation' : 'New AGY conversation'}. Send /cancel to stop, or reply with notes anytime._`;
 
   await gatewayRef.sendMessage(jid, initialAck);
   await gatewayRef.sendTyping(jid);
