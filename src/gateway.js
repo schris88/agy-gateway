@@ -15,6 +15,7 @@ const logger = require('./logger');
 const config = require('./config');
 const { setQrCode, setConnectionStatus } = require('./webServer');
 const { handleIncomingMessage } = require('./commandHandler');
+const { loadReminders } = require('./scheduler');
 
 let sock = null;
 const gatewaySentMessageIds = new Set();
@@ -96,8 +97,76 @@ async function startWhatsAppGateway() {
       const me = sock.user;
       logger.info(`✅ WhatsApp Connection Established! Logged in as: ${me?.name || me?.id}`);
       setConnectionStatus('CONNECTED', me);
+
+      // Create gateway reference and load active reminders
+      const gatewayRef = createGatewayRef();
+      loadReminders(gatewayRef);
     }
   });
+
+  function createGatewayRef() {
+    return {
+      sendMessage: async (targetJid, textContent) => {
+        try {
+          const sent = await sock.sendMessage(targetJid, { text: textContent });
+          if (sent?.key?.id) {
+            gatewaySentMessageIds.add(sent.key.id);
+          }
+          return sent;
+        } catch (err) {
+          logger.error({ err }, `Failed to send WhatsApp message to ${targetJid}`);
+        }
+      },
+      sendImageMessage: async (targetJid, imagePath, captionText) => {
+        try {
+          if (!fs.existsSync(imagePath)) {
+            logger.warn(`Cannot send image: file does not exist at ${imagePath}`);
+            return;
+          }
+          logger.info(`📤 Sending generated image file ${imagePath} to ${targetJid}`);
+          const sent = await sock.sendMessage(targetJid, {
+            image: fs.readFileSync(imagePath),
+            caption: captionText ? captionText : undefined
+          });
+          if (sent?.key?.id) {
+            gatewaySentMessageIds.add(sent.key.id);
+          }
+          return sent;
+        } catch (err) {
+          logger.error({ err }, `Failed to send WhatsApp image to ${targetJid}`);
+        }
+      },
+      sendDocumentMessage: async (targetJid, filePath, captionText) => {
+        try {
+          if (!fs.existsSync(filePath)) {
+            logger.warn(`Cannot send document: file does not exist at ${filePath}`);
+            return;
+          }
+          const filename = path.basename(filePath);
+          logger.info(`📄 Sending document file ${filePath} to ${targetJid}`);
+          const sent = await sock.sendMessage(targetJid, {
+            document: fs.readFileSync(filePath),
+            fileName: filename,
+            mimetype: 'application/octet-stream',
+            caption: captionText ? captionText : undefined
+          });
+          if (sent?.key?.id) {
+            gatewaySentMessageIds.add(sent.key.id);
+          }
+          return sent;
+        } catch (err) {
+          logger.error({ err }, `Failed to send WhatsApp document to ${targetJid}`);
+        }
+      },
+      sendTyping: async (targetJid, isComposing = true) => {
+        try {
+          await sock.sendPresenceUpdate(isComposing ? 'composing' : 'paused', targetJid);
+        } catch (e) {
+          // Ignore presence errors
+        }
+      }
+    };
+  }
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
@@ -127,46 +196,7 @@ async function startWhatsAppGateway() {
         continue;
       }
 
-      // Construct gateway reference for response sending
-      const gatewayRef = {
-        sendMessage: async (targetJid, textContent) => {
-          try {
-            const sent = await sock.sendMessage(targetJid, { text: textContent });
-            if (sent?.key?.id) {
-              gatewaySentMessageIds.add(sent.key.id);
-            }
-            return sent;
-          } catch (err) {
-            logger.error({ err }, `Failed to send WhatsApp message to ${targetJid}`);
-          }
-        },
-        sendImageMessage: async (targetJid, imagePath, captionText) => {
-          try {
-            if (!fs.existsSync(imagePath)) {
-              logger.warn(`Cannot send image: file does not exist at ${imagePath}`);
-              return;
-            }
-            logger.info(`📤 Sending generated image file ${imagePath} to ${targetJid}`);
-            const sent = await sock.sendMessage(targetJid, {
-              image: fs.readFileSync(imagePath),
-              caption: captionText ? captionText : undefined
-            });
-            if (sent?.key?.id) {
-              gatewaySentMessageIds.add(sent.key.id);
-            }
-            return sent;
-          } catch (err) {
-            logger.error({ err }, `Failed to send WhatsApp image to ${targetJid}`);
-          }
-        },
-        sendTyping: async (targetJid, isComposing = true) => {
-          try {
-            await sock.sendPresenceUpdate(isComposing ? 'composing' : 'paused', targetJid);
-          } catch (e) {
-            // Ignore presence errors
-          }
-        }
-      };
+      const gatewayRef = createGatewayRef();
 
       // Extract message text or process media with live progress notifications
       const content = await extractMessageContent(msg, senderJid, gatewayRef);

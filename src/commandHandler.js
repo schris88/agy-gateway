@@ -10,6 +10,12 @@ const {
   getActiveTask,
   getAllActiveTasks
 } = require('./agyRunner');
+const {
+  addReminder,
+  cancelReminder,
+  getRemindersForJid,
+  parseTimeDelay
+} = require('./scheduler');
 
 const SESSIONS_FILE = path.join(config.authDir, 'chat_sessions.json');
 const chatSessions = new Map();
@@ -62,7 +68,7 @@ function parseRateLimitWaitTime(errorMsg) {
     return { isRateLimit: false, waitMs: 60000 };
   }
 
-  let waitMs = 60000; // Default 60 seconds fallback
+  let waitMs = 60000;
 
   const secMatch = lower.match(/(?:retry after|try again in|wait)\s*(\d+)\s*(?:sec|second|s)/);
   if (secMatch && secMatch[1]) {
@@ -74,7 +80,6 @@ function parseRateLimitWaitTime(errorMsg) {
     }
   }
 
-  // Bound wait time between 15 seconds and 1 hour
   waitMs = Math.max(15000, Math.min(waitMs, 3600000));
   return { isRateLimit: true, waitMs };
 }
@@ -86,7 +91,6 @@ function extractImagePaths(text) {
   if (!text) return [];
   const found = new Set();
 
-  // Pattern 1: Markdown image syntax ![alt](path)
   const mdImageRegex = /!\[.*?\]\((file:\/\/)?([^\s)]+\.(?:png|jpg|jpeg|webp))\)/gi;
   let match;
   while ((match = mdImageRegex.exec(text)) !== null) {
@@ -96,7 +100,6 @@ function extractImagePaths(text) {
     }
   }
 
-  // Pattern 2: File scheme file:///path/to/image.png
   const fileSchemeRegex = /file:\/\/(\/[^\s()]+\.(?:png|jpg|jpeg|webp))/gi;
   while ((match = fileSchemeRegex.exec(text)) !== null) {
     const rawPath = match[1];
@@ -105,7 +108,6 @@ function extractImagePaths(text) {
     }
   }
 
-  // Pattern 3: Absolute file paths in /tmp/ or /brain/ or /scratch/ or current dir
   const pathRegex = /(\/(?:tmp|[^\s()]+\/brain\/[^\s()]+|[^\s()]+\/scratch\/[^\s()]+|[^\s()]+)\/[^\s()]+\.(?:png|jpg|jpeg|webp))/gi;
   while ((match = pathRegex.exec(text)) !== null) {
     const rawPath = match[1];
@@ -134,7 +136,6 @@ function findGeneratedImagesForTask(convId, startTime) {
         if (file.endsWith('.jpg') || file.endsWith('.png') || file.endsWith('.webp')) {
           const filePath = path.join(brainDir, file);
           const stat = fs.statSync(filePath);
-          // If created or modified around or after task start time
           if (stat.mtimeMs >= startTime - 10000) {
             found.add(filePath);
           }
@@ -152,7 +153,7 @@ function findGeneratedImagesForTask(convId, startTime) {
  * Handles incoming WhatsApp message text.
  * @param {string} jid WhatsApp chat remote JID
  * @param {string} text Message text
- * @param {object} gatewayRef Reference to Baileys gateway helper { sendMessage, sendImageMessage, sendTyping }
+ * @param {object} gatewayRef Reference to Baileys gateway helper { sendMessage, sendImageMessage, sendDocumentMessage, sendTyping }
  */
 async function handleIncomingMessage(jid, text, gatewayRef) {
   const cleanText = text.trim();
@@ -179,7 +180,84 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
     return;
   }
 
-  // 3. Check if a task is already running in this chat
+  // 3. Handle /export <file_path>
+  if (lowerText.startsWith('/export ') || lowerText.startsWith('!export ')) {
+    const targetPath = cleanText.slice(8).trim();
+    if (!targetPath) {
+      await gatewayRef.sendMessage(jid, '⚠️ Usage: `/export <absolute_or_relative_file_path>` (e.g. `/export README.md`)');
+      return;
+    }
+
+    const resolvedPath = path.resolve(targetPath);
+    if (!fs.existsSync(resolvedPath)) {
+      await gatewayRef.sendMessage(jid, `❌ File not found at path: \`${resolvedPath}\``);
+      return;
+    }
+
+    if (gatewayRef.sendDocumentMessage) {
+      await gatewayRef.sendDocumentMessage(jid, resolvedPath, `📄 *Exported File:* ${path.basename(resolvedPath)}`);
+    } else {
+      await gatewayRef.sendMessage(jid, `❌ Document sending function is not available.`);
+    }
+    return;
+  }
+
+  // 4. Handle /remind
+  if (lowerText.startsWith('/remind') || lowerText.startsWith('!remind')) {
+    const argsStr = cleanText.slice(7).trim();
+
+    if (!argsStr || argsStr === 'list') {
+      const list = getRemindersForJid(jid);
+      if (list.length === 0) {
+        await gatewayRef.sendMessage(jid, 'ℹ️ No active scheduled reminders for this chat.');
+        return;
+      }
+      const itemsText = list.map(r => {
+        const remainingSec = Math.round((r.triggerTime - Date.now()) / 1000);
+        return `• ID: \`${r.id}\` — "${r.message}" (in ~${remainingSec}s)`;
+      }).join('\n');
+      await gatewayRef.sendMessage(jid, `⏰ *Active Reminders:*\n\n${itemsText}`);
+      return;
+    }
+
+    if (argsStr.startsWith('cancel ')) {
+      const idToCancel = argsStr.slice(7).trim();
+      const ok = cancelReminder(idToCancel);
+      if (ok) {
+        await gatewayRef.sendMessage(jid, `✅ Reminder \`${idToCancel}\` cancelled.`);
+      } else {
+        await gatewayRef.sendMessage(jid, `❌ Reminder \`${idToCancel}\` not found.`);
+      }
+      return;
+    }
+
+    // Format: /remind <timeStr> <message>
+    const firstSpaceIndex = argsStr.indexOf(' ');
+    if (firstSpaceIndex === -1) {
+      await gatewayRef.sendMessage(jid, '⚠️ Usage: `/remind <time> <message>`\nExample: `/remind 10m Check deployment status`');
+      return;
+    }
+
+    const timeStr = argsStr.slice(0, firstSpaceIndex).trim();
+    const reminderMsg = argsStr.slice(firstSpaceIndex + 1).trim();
+
+    try {
+      const { id, delayMs } = addReminder(jid, timeStr, reminderMsg, gatewayRef);
+      const secondsSec = Math.round(delayMs / 1000);
+      const minutesMin = Math.round(delayMs / 60000);
+      const displayTime = minutesMin >= 1 ? `${minutesMin} min` : `${secondsSec} sec`;
+
+      await gatewayRef.sendMessage(
+        jid,
+        `⏰ *Reminder Scheduled!*\n\n• *ID:* \`${id}\`\n• *Time:* in ~${displayTime}\n• *Note:* "${reminderMsg}"`
+      );
+    } catch (err) {
+      await gatewayRef.sendMessage(jid, `❌ ${err.message}`);
+    }
+    return;
+  }
+
+  // 5. Check if a task is already running in this chat
   if (isTaskRunning(jid)) {
     let btwNote = cleanText;
     if (lowerText.startsWith('/btw ') || lowerText.startsWith('!btw ')) {
@@ -196,13 +274,13 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
     return;
   }
 
-  // 4. Handle explicit /btw when no task is running
+  // 6. Handle explicit /btw when no task is running
   if (lowerText.startsWith('/btw ') || lowerText.startsWith('!btw ') || lowerText === '/btw' || lowerText === '!btw') {
     await gatewayRef.sendMessage(jid, 'ℹ️ No task is currently running. You can send a prompt directly or use `/goal <prompt>`.');
     return;
   }
 
-  // 5. Handle /help
+  // 7. Handle /help
   if (lowerText === '/help' || lowerText === '!help' || lowerText === '/start') {
     const session = chatSessions.get(jid);
     const hasHistory = !!session?.conversationId;
@@ -212,6 +290,8 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
 
 • */goal <prompt>* - Long-running goal task with high reasoning effort & live updates
 • */plan <prompt>* - Step-by-step plan execution mode
+• */remind <time> <msg>* - Schedule reminder alert (e.g. \`/remind 10m Check server\`)
+• */export <file_path>* - Send file directly as WhatsApp document attachment
 • */models* - Native AGY models (Gemini 3.6 Flash, Gemini 3.1 Pro, Claude Sonnet 4-6)
 • */agents* - Native AGY subagents (research, self)
 • */skills* or */plugins* - Installed AGY skills & plugin extensions
@@ -227,7 +307,7 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
     return;
   }
 
-  // 6. Handle /models (Native AGY CLI Context)
+  // 8. Handle /models (Native AGY CLI Context)
   if (lowerText === '/models' || lowerText === '!models') {
     const modelsMessage = `
 🤖 *Native AGY Models*
@@ -240,7 +320,7 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
     return;
   }
 
-  // 7. Handle /agents (Native AGY Subagents)
+  // 9. Handle /agents (Native AGY Subagents)
   if (lowerText === '/agents' || lowerText === '!agents' || lowerText === '/agent') {
     const agentsMessage = `
 👥 *Native AGY Subagents*
@@ -252,7 +332,7 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
     return;
   }
 
-  // 8. Handle /skills or /plugins (Complete Uncut Listing)
+  // 10. Handle /skills or /plugins (Complete Uncut Listing)
   if (lowerText === '/skills' || lowerText === '!skills' || lowerText === '/plugins' || lowerText === '!plugins') {
     await gatewayRef.sendMessage(jid, '🛠️ *Fetching complete list of installed AGY Skills & Plugins...*\n_Inspecting all skill manifests..._');
     await gatewayRef.sendTyping(jid);
@@ -313,7 +393,7 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
     return;
   }
 
-  // 9. Handle /status
+  // 11. Handle /status
   if (lowerText === '/status' || lowerText === '!status') {
     const activeTasks = getAllActiveTasks();
     const uptimeMin = Math.round(process.uptime() / 60);
@@ -332,7 +412,7 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
     return;
   }
 
-  // 10. Handle /goal or /plan or general slash prompt
+  // 12. Handle /goal or /plan or general slash prompt
   let isGoal = false;
   let mode = undefined;
   let prompt = cleanText;
@@ -355,7 +435,7 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
   const continueConvId = existingSession ? existingSession.conversationId : null;
   const taskStartTime = Date.now();
 
-  // 11. Start Prompt Execution with Interactive Progress
+  // 13. Start Prompt Execution with Interactive Progress
   const modeLabel = isGoal ? 'Goal Task' : (mode === 'plan' ? 'Plan Task' : 'Task');
   const initialAck = `⏳ *AGY ${modeLabel} Received!* Initializing agent pipeline...\n_${continueConvId ? 'Continuing AGY session' : 'New AGY session'}. Send /cancel to stop, or reply with notes anytime._`;
 
