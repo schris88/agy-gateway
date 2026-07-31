@@ -19,6 +19,7 @@ const { loadReminders } = require('./scheduler');
 
 let sock = null;
 const gatewaySentMessageIds = new Set();
+const processedIncomingMessageIds = new Set();
 const gatewayStartTime = Date.now();
 const processedReactions = new Set();
 
@@ -39,6 +40,9 @@ try {
 setInterval(() => {
   if (gatewaySentMessageIds.size > 1000) {
     gatewaySentMessageIds.clear();
+  }
+  if (processedIncomingMessageIds.size > 5000) {
+    processedIncomingMessageIds.clear();
   }
   if (processedReactions.size > 5000) {
     processedReactions.clear();
@@ -222,6 +226,13 @@ async function startWhatsAppGateway() {
       if (gatewaySentMessageIds.has(messageId)) {
         continue;
       }
+
+      // Ignore duplicate incoming message IDs (prevents double executions for self-chats/re-transmissions)
+      if (processedIncomingMessageIds.has(messageId)) {
+        logger.info(`Ignoring duplicate incoming message ID: ${messageId}`);
+        continue;
+      }
+      processedIncomingMessageIds.add(messageId);
 
       const fromMe = !!msg.key.fromMe;
 
