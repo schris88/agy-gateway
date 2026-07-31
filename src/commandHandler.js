@@ -504,16 +504,17 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
   let heartbeatInterval = null;
   heartbeatInterval = setInterval(async () => {
     try {
-      await gatewayRef.sendTyping(jid);
+      await gatewayRef.sendTyping(jid, true);
       const elapsedSec = Math.round((Date.now() - taskStartTime) / 1000);
       if (Date.now() - lastProgressSent >= 15000) {
         lastProgressSent = Date.now();
         await gatewayRef.sendMessage(jid, `⏳ *AGY is working...* (${elapsedSec}s elapsed)`);
+        await gatewayRef.sendTyping(jid, true);
       }
     } catch (e) {
       // Ignore heartbeat error
     }
-  }, 6000);
+  }, 3000);
 
   const cleanupHeartbeat = () => {
     if (heartbeatInterval) {
