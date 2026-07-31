@@ -13,7 +13,7 @@ Built using **[@whiskeysockets/baileys](https://github.com/WhiskeySockets/Bailey
 
 ## 💡 Motivation & Background
 
-This project was built to replace the default **Hermes Agent** WhatsApp gateway setup. 
+This project was built to replace my Hermes Agent which wasnt performing well with Deepseek and Qwen Models 
 
 While Hermes Agent provided a solid initial integration, relying on Chinese LLMs (such as DeepSeek or third-party OpenRouter endpoints) frequently resulted in high latency, rate limits, higher API costs, and lower reliability for a real-time 24/7 messaging daemon.
 
