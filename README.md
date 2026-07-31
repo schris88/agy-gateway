@@ -5,62 +5,45 @@
 [![Baileys](https://img.shields.io/badge/WhatsApp-Baileys%20v6-brightgreen.svg)](https://github.com/WhiskeySockets/Baileys)
 [![Antigravity](https://img.shields.io/badge/Agent-Antigravity%20AGY-orange.svg)](https://github.com/nousresearch/hermes-agent)
 
-An always-online, 24/7 WhatsApp Gateway daemon for the **Antigravity (AGY) Agent**, inspired by the Nous Research Hermes Agent architecture.
+An always-online, 24/7 WhatsApp Gateway daemon for the **Antigravity (AGY) Agent**, inspired by the Hermes Agent architecture.
 
 Built using **[@whiskeysockets/baileys](https://github.com/WhiskeySockets/Baileys)** for lightweight, headless Multi-Device WhatsApp Web protocol execution. It runs seamlessly on low-resource hardware like **Raspberry Pi**, home servers, or cloud VPS instances without requiring heavy Chrome/Puppeteer browser instances.
 
 ---
 
-## 💡 Motivation & Background
-
-This project was built to replace my Hermes Agent which wasnt performing well with Deepseek and Qwen Models 
-
-While Hermes Agent provided a solid initial integration, relying on Chinese LLMs (such as DeepSeek or third-party OpenRouter endpoints) frequently resulted in high latency, rate limits, higher API costs, and lower reliability for a real-time 24/7 messaging daemon.
-
-**Antigravity (AGY)** offers a significantly superior foundation:
-- **🚀 Faster & Higher Throughput**: Instant response generation using native Google Gemini 3.6 Flash / 3.1 Pro and Claude 3.7 Sonnet backends.
-- **💰 Superior Cost Efficiency**: Dramatically lower token cost per interaction with generous subscription capacity.
-- **🧠 Better Reasoning & Tool Accuracy**: High precision in multi-step coding, file editing, image generation, and voice note transcription.
-- **🔄 Robust Conversation Memory**: Seamless persistent multi-turn history continuity across all WhatsApp messages.
-
----
-
-
 ## ✨ Features
 
 - **📱 Self-Chat & QR Code Login**:
   - Displays a clean ASCII QR code directly in the terminal CLI upon launch.
-  - Hosts a web dashboard at `http://<server-ip>:3000` (or `http://<server-ip>:3000/qr`) to view the QR code in any browser for remote setup on headless servers.
-  - Native **Self-Chat** support (`WHATSAPP_ALLOW_SELF=true`): Message yourself in WhatsApp ("Message Yourself" / own contact number) to run commands.
+  - Web dashboard hosted at `http://<server-ip>:3000` to view the QR code in any browser for remote headless setup.
+  - Native **Self-Chat** support: Message yourself in WhatsApp ("Message Yourself" / own contact number) to execute commands.
 - **🟢 24/7 Always Online Daemon**:
   - Auto-reconnect with exponential backoff on network disconnections.
-  - Persistent authentication storage (`auth_info_baileys`).
-  - Native systemd service support (`agy-gateway.service`) for Linux/Raspberry Pi.
+  - Persistent session authentication storage (`auth_info_baileys`).
+  - Native systemd service installer script (`install-service.sh`) for Linux/Raspberry Pi.
+- **🎙️ Voice Note Transcription & Media Handling**:
+  - Automatic download and fast speech transcription of WhatsApp voice notes with step-by-step progress feedback.
+  - Full support for processing images, videos, and document attachments sent in chat.
+  - **Auto Media Sending**: Automatically delivers AGY-generated images (PNG, JPG) as WhatsApp Image Cards and generated documents (PDF, CSV, TXT, ZIP) as WhatsApp Document Cards.
 - **💬 Interactive Progress & Live Updates**:
   - Live typing indicator (`composing`).
   - Intermediate status reporting when AGY executes tools (e.g. `🛠️ Tool: run_command: git status`).
-  - Automatic Markdown-to-WhatsApp text formatting (`*bold*`, `_italic_`, ` ```code``` `).
+  - Markdown-to-WhatsApp text formatting (`*bold*`, `_italic_`, ` ```code``` `).
   - Smart message splitting for responses exceeding WhatsApp's character limit (>4000 chars).
-- **🎯 Built-in Gateway Commands (`/goal`, `/plan`, `/remind`, `/export`, `/models`, `/skills`, `/status`, `/cancel`, `/cleanup`)**:
-  - `/goal <prompt>` — Spawns long-running goal tasks with high reasoning effort and step-by-step reporting.
+  - Dynamic mid-task interactivity: Send notes or replies anytime during task execution (`/btw <note>`).
+- **🎯 Native Gateway Commands**:
+  - `/goal <prompt>` — Spawns long-running goal tasks with high reasoning effort and step-by-step updates.
   - `/plan <prompt>` — Executes planning mode before implementation.
   - `/remind <time> <msg>` — Schedules proactive WhatsApp reminders (e.g. `/remind 10m Check server`).
-  - `/export <path>` — Downloads and sends any server file directly as a WhatsApp Document card.
-  - `/models` — Lists available native AGY LLMs.
-  - `/skills` — Lists all installed AGY skills & plugin extensions.
-  - `/status` — Displays gateway uptime, connection state, memory usage, and active tasks.
-  - `/cancel` — Instantly terminates the active process for the chat.
-  - `/cleanup` — Manually triggers temporary media folder cleanup.
-- **⚡ All AGY Slash Commands & Custom Skills Supported**:
-  - You are **not limited** to the gateway commands above! You can send **ANY** slash command or skill installed in AGY (e.g. `/caveman`, `/learn`, `/find-skills`, `/clean-code`, `/a11y-debugging`, `/troubleshooting`, `/grill-me`, etc.).
-  - The gateway forwards any slash prompt directly to AGY's skill engine, executing it with full functionality!
-- **👍 WhatsApp Emoji Reaction Feedback System**:
-  - Long-press any AGY response and react with emojis (👍, 👎, ❤️, 🔥, 💡).
-  - Positive reactions (👍 / ❤️ / 🔥) automatically save the response pattern to local feedback memory and sync to your **Obsidian Vault (`antigravity_memory.md`)** for continuous AGY improvement!
+  - `/export <file_path>` — Downloads and sends any server file directly as a WhatsApp Document card.
+  - `/reset` / `/clear` — Clears conversation session history and starts a fresh AGY session.
+  - `/status` — Displays gateway uptime, active session ID, connection state, and running tasks.
+  - `/cancel` — Instantly terminates active task processes for the chat.
+  - `/models`, `/skills`, `/agents` — Lists native AGY models, installed skills, and available subagents.
+- **👍 Emoji Reaction Feedback**:
+  - React to AGY responses with emojis (👍, 👎, ❤️, 🔥, 💡) to record response feedback to local memory. *(Optional: Syncs with Obsidian Vault if AGY memory skill is configured).*
 - **🧹 Automatic 7-Day Media Cleanup**:
-  - Automatically runs a daily background task to remove temporary WhatsApp voice notes, images, and videos older than 7 days from `/tmp/`.
-- **🔄 Dynamic Mid-Task Interactivity**:
-  - Any text message sent while a task is running is automatically captured as a `/btw` note and passed to the active process context.
+  - Automatically runs a daily background task to remove temporary WhatsApp voice notes, images, and videos older than 7 days from `/tmp/` (or run manually via `/cleanup`).
 
 ---
 
@@ -80,7 +63,7 @@ While Hermes Agent provided a solid initial integration, relying on Chinese LLMs
                           ┌─────────────────────────────┐
                           │     Command Router          │ (src/commandHandler.js)
                           └──────────────┬──────────────┘
-                                         │ /goal, /models, /btw, /cancel, text
+                                         │ /goal, /plan, /remind, /cancel, text
                                          ▼
 ┌─────────────────────────┐   ┌─────────────────────────┐
 │ Web Dashboard & QR      │ ◄─┤  AGY Execution Manager  │ (src/agyRunner.js)
@@ -94,12 +77,12 @@ While Hermes Agent provided a solid initial integration, relying on Chinese LLMs
 
 ---
 
-## 🚀 Quick Start & Installation
+## 🚀 Quick Start & Setup
 
 ### 1. Prerequisites
 - **Node.js**: v18 or higher (`node -v`)
-- **Antigravity CLI**: Installed at `~/.local/bin/agy` or available on system PATH (`agy --version`)
-- **Audio & Speech Recognition Dependencies** (`flac` & `ffmpeg` for Raspberry Pi voice notes):
+- **Antigravity CLI**: Installed at `~/.local/bin/agy` or on system PATH (`agy --version`)
+- **Audio & Speech Recognition Dependencies** (optional for voice note transcription):
   ```bash
   sudo apt-get update && sudo apt-get install -y ffmpeg flac python3-pip
   python3 -m pip install SpeechRecognition --break-system-packages
@@ -112,57 +95,69 @@ cd agy-gateway
 npm install
 ```
 
-### 3. Configuration (`.env`)
-Create a `.env` file or modify the defaults:
-
-```env
-# Path to AGY CLI binary (e.g. ~/.local/bin/agy or /usr/local/bin/agy)
-AGY_BIN_PATH=/home/username/.local/bin/agy
-
-# Enable Self-Chat (messaging yourself in WhatsApp)
-WHATSAPP_ALLOW_SELF=true
-
-# Phone number whitelist (comma separated, or * for all)
-WHATSAPP_ALLOWED_NUMBERS=*
-
-# Web server dashboard & QR code port
-PORT=3000
-
-# Auth credentials directory
-AUTH_DIR=./auth_info_baileys
-
-# Logging level (debug, info, warn, error)
-LOG_LEVEL=info
+### 3. Interactive Installation (Recommended)
+Run the automated installer script to set up configuration and (optionally) systemd:
+```bash
+./install-service.sh
 ```
 
-### 4. Running locally
+### 4. Run Locally
 ```bash
 npm start
 ```
-Open **`http://localhost:3000`** in your browser or view the terminal output to scan the QR code using WhatsApp (*Linked Devices*).
+Open **`http://localhost:3000`** in your browser or view terminal output to scan the QR code using WhatsApp (*Linked Devices*).
 
 ---
 
-## 🍓 Raspberry Pi / Linux 24/7 Systemd Deployment
+## ⚙️ Configuration (`.env`)
 
-To run the gateway 24/7 as a background service on Raspberry Pi or Linux:
+> [!NOTE]
+> **All `.env` variables are completely optional!** The gateway works out of the box with intelligent default fallbacks. You only need to create/modify `.env` if you want to override default settings (such as phone number whitelisting). Running `./install-service.sh` configures `.env` interactively.
 
-### Option A: User Systemd Service (Recommended)
+| Variable | Description | Default / Fallback |
+| :--- | :--- | :--- |
+| `AGY_BIN_PATH` | Path to `agy` CLI binary | Auto-detected (`~/.local/bin/agy` or `which agy`) |
+| `WHATSAPP_ALLOW_SELF` | Enable Self-Chat (messaging yourself) | `true` |
+| `WHATSAPP_ALLOWED_NUMBERS` | Allowed phone numbers (comma-separated, e.g. `4917643318140`) | `*` (All allowed) |
+| `PORT` | Web dashboard & QR code server port | `3000` |
+| `AUTH_DIR` | Session credentials storage directory | `./auth_info_baileys` |
+| `LOG_LEVEL` | Logging level (`debug`, `info`, `warn`, `error`) | `info` |
+
+---
+
+## 📖 Command Reference
+
+| Command | Description | Example |
+| :--- | :--- | :--- |
+| `/goal <prompt>` | Run long-running goal task with high reasoning effort | `/goal Build a modern REST API in Node.js` |
+| `/plan <prompt>` | Run step-by-step planning task | `/plan Design architecture for app` |
+| `/remind <time> <msg>` | Schedule a WhatsApp reminder | `/remind 10m Check server status` |
+| `/export <path>` | Send server file as WhatsApp document attachment | `/export README.md` |
+| `/reset` or `/clear` | Clear chat history session & start fresh | `/reset` |
+| `/status` | View gateway uptime and running tasks | `/status` |
+| `/cancel` | Cancel active task running in chat | `/cancel` |
+| `/btw <note>` | Inject mid-task update to running task | `/btw Ensure error handling is included` |
+| `/models` | List available native AGY AI models | `/models` |
+| `/skills` | List all installed AGY skills & plugins | `/skills` |
+| `<any text>` | Send regular prompt to AGY | `Explain the project structure` |
+
+---
+
+## 🍓 24/7 Background Service Deployment
+
+### Option A: Automated Systemd Installer (Recommended for Linux/Raspberry Pi)
+```bash
+./install-service.sh
+sudo systemctl start agy-gateway
+```
+
+### Option B: User Systemd Service
 ```bash
 mkdir -p ~/.config/systemd/user
 cp agy-gateway.service ~/.config/systemd/user/agy-gateway.service
-
-# Reload and start service
 systemctl --user daemon-reload
 systemctl --user enable agy-gateway.service
 systemctl --user start agy-gateway.service
-```
-
-### Option B: System Systemd Service
-Run the automated installer script:
-```bash
-chmod +x install-service.sh
-./install-service.sh
 ```
 
 ### Managing the Service:
@@ -179,26 +174,13 @@ systemctl --user restart agy-gateway.service
 
 ---
 
-## 📖 Command Reference
-
-| Command | Description | Example |
-| :--- | :--- | :--- |
-| `/goal <prompt>` | Run a long-running goal task with high reasoning effort | `/goal Build a modern REST API in Node.js` |
-| `/models` | List all available AI models | `/models` |
-| `/status` | View gateway uptime and running tasks | `/status` |
-| `/cancel` | Cancel the active task in current chat | `/cancel` |
-| `/btw <note>` | Inject a note into a running task | `/btw Ensure error handling is included` |
-| `<any text>` | Send regular prompt to AGY | `Explain the project structure` |
-
----
-
 ## 🔧 Troubleshooting
 
 ### "Device can't be added" error when scanning QR code
-Meta/WhatsApp servers block unauthorized or non-standard browser signatures. `agy-gateway` uses standard browser headers (`Browsers.ubuntu('Chrome')`). If pairing fails:
+If WhatsApp fails during pairing:
 1. Stop the service: `systemctl --user stop agy-gateway`
 2. Clear old session files: `rm -rf auth_info_baileys`
-3. Restart the service: `systemctl --user start agy-gateway`
+3. Restart: `npm start` or `systemctl --user start agy-gateway`
 4. Open `http://<server-ip>:3000` and scan the fresh QR code.
 
 ---
