@@ -3,12 +3,14 @@ const {
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
-  Browsers
+  Browsers,
+  downloadMediaMessage
 } = require('@whiskeysockets/baileys');
 const qrcodeTerminal = require('qrcode-terminal');
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 const logger = require('./logger');
 const config = require('./config');
 const { setQrCode, setConnectionStatus } = require('./webServer');
@@ -50,8 +52,8 @@ async function startWhatsAppGateway() {
     auth: state,
     printQRInTerminal: false,
     logger: pino({ level: 'silent' }),
-    browser: Browsers.ubuntu('Chrome'), // Use standard valid desktop browser tuple
-    syncFullHistory: false, // Prevent sync hangs
+    browser: Browsers.ubuntu('Chrome'), // Standard desktop browser tuple
+    syncFullHistory: false,
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
     keepAliveIntervalMs: 25000,
@@ -125,11 +127,11 @@ async function startWhatsAppGateway() {
         continue;
       }
 
-      // Extract message text
-      const text = extractText(msg.message);
-      if (!text) continue;
+      // Extract message text or process media (Images, Audio, Voice Notes, Video, Documents)
+      const content = await extractMessageContent(msg);
+      if (!content || !content.text) continue;
 
-      logger.info(`📩 Received message from ${senderJid} (fromMe: ${fromMe}): "${text.slice(0, 50)}"`);
+      logger.info(`📩 Received message (${content.type}) from ${senderJid} (fromMe: ${fromMe}): "${content.text.slice(0, 70)}"`);
 
       // Construct gateway reference for response sending
       const gatewayRef = {
@@ -155,7 +157,7 @@ async function startWhatsAppGateway() {
 
       // Pass to command router
       try {
-        await handleIncomingMessage(senderJid, text, gatewayRef);
+        await handleIncomingMessage(senderJid, content.text, gatewayRef);
       } catch (err) {
         logger.error({ err }, `Error handling message from ${senderJid}`);
       }
@@ -171,19 +173,109 @@ function isJidAllowed(jid, fromMe) {
   return config.whatsappAllowedNumbers.some(num => cleanNum.endsWith(num) || num.endsWith(cleanNum));
 }
 
-function extractText(message) {
+async function extractMessageContent(msg) {
+  const message = msg.message;
+  if (!message) return null;
+
+  // 1. Text message
   if (message.conversation) {
-    return message.conversation;
+    return { type: 'text', text: message.conversation };
   }
   if (message.extendedTextMessage && message.extendedTextMessage.text) {
-    return message.extendedTextMessage.text;
+    return { type: 'text', text: message.extendedTextMessage.text };
   }
-  if (message.imageMessage && message.imageMessage.caption) {
-    return message.imageMessage.caption;
+
+  // 2. Image message
+  if (message.imageMessage) {
+    try {
+      const buffer = await downloadMediaMessage(msg, 'buffer', {});
+      const filename = `whatsapp_img_${Date.now()}_${Math.floor(Math.random()*1000)}.jpg`;
+      const filePath = path.join('/tmp', filename);
+      fs.writeFileSync(filePath, buffer);
+
+      const caption = message.imageMessage.caption ? ` Caption: "${message.imageMessage.caption}"` : '';
+      const promptText = `[Received Image File saved at: ${filePath}]${caption} Please inspect and analyze this image to fulfill the request.`;
+
+      logger.info(`Downloaded image to ${filePath} (${buffer.length} bytes)`);
+      return { type: 'image', text: promptText, filePath };
+    } catch (e) {
+      logger.error({ e }, 'Failed to download image media message');
+      if (message.imageMessage.caption) {
+        return { type: 'text', text: message.imageMessage.caption };
+      }
+      return { type: 'text', text: '[User sent an image file]' };
+    }
   }
-  if (message.videoMessage && message.videoMessage.caption) {
-    return message.videoMessage.caption;
+
+  // 3. Audio / Voice message (PTT)
+  if (message.audioMessage) {
+    try {
+      const buffer = await downloadMediaMessage(msg, 'buffer', {});
+      const oggPath = path.join('/tmp', `whatsapp_audio_${Date.now()}_${Math.floor(Math.random()*1000)}.ogg`);
+      const wavPath = oggPath.replace('.ogg', '.wav');
+      fs.writeFileSync(oggPath, buffer);
+
+      // Convert OGG Opus to WAV using ffmpeg if available
+      try {
+        execSync(`ffmpeg -y -i "${oggPath}" -ar 16000 -ac 1 "${wavPath}" 2>/dev/null`);
+      } catch (ffErr) {
+        logger.warn('ffmpeg conversion failed, using ogg file');
+      }
+
+      const audioFileToUse = fs.existsSync(wavPath) ? wavPath : oggPath;
+
+      // Try transcription using transcribe script if available
+      let transcriptionText = null;
+      const transcribeScript = path.join(__dirname, 'transcribe.py');
+      if (fs.existsSync(transcribeScript)) {
+        try {
+          transcriptionText = execSync(`python3 "${transcribeScript}" "${audioFileToUse}"`, { encoding: 'utf-8' }).trim();
+        } catch (tErr) {
+          logger.warn('Voice transcription script produced no text output');
+        }
+      }
+
+      let promptText = '';
+      if (transcriptionText) {
+        promptText = `[Received Voice Message. Transcribed Text: "${transcriptionText}"] (Audio file saved at ${audioFileToUse}). Please respond to this voice message request.`;
+      } else {
+        promptText = `[Received Voice Message Audio File saved at: ${audioFileToUse}]. Transcribe this audio file and fulfill the request.`;
+      }
+
+      logger.info(`Downloaded voice note to ${audioFileToUse} (${buffer.length} bytes)`);
+      return { type: 'audio', text: promptText, filePath: audioFileToUse };
+    } catch (e) {
+      logger.error({ e }, 'Failed to download audio media message');
+      return { type: 'text', text: '[User sent a voice message]' };
+    }
   }
+
+  // 4. Video message
+  if (message.videoMessage) {
+    try {
+      const buffer = await downloadMediaMessage(msg, 'buffer', {});
+      const filePath = path.join('/tmp', `whatsapp_video_${Date.now()}_${Math.floor(Math.random()*1000)}.mp4`);
+      fs.writeFileSync(filePath, buffer);
+      const caption = message.videoMessage.caption ? ` Caption: "${message.videoMessage.caption}"` : '';
+      return { type: 'video', text: `[Received Video File saved at: ${filePath}]${caption} Please inspect and analyze this video file.`, filePath };
+    } catch (e) {
+      if (message.videoMessage.caption) return { type: 'text', text: message.videoMessage.caption };
+    }
+  }
+
+  // 5. Document message
+  if (message.documentMessage) {
+    try {
+      const buffer = await downloadMediaMessage(msg, 'buffer', {});
+      const fileName = message.documentMessage.fileName || `doc_${Date.now()}`;
+      const filePath = path.join('/tmp', fileName);
+      fs.writeFileSync(filePath, buffer);
+      return { type: 'document', text: `[Received Document File saved at: ${filePath}] Please inspect and process this file.`, filePath };
+    } catch (e) {
+      // fallback
+    }
+  }
+
   return null;
 }
 
