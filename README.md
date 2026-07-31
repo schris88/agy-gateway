@@ -11,6 +11,21 @@ Built using **[@whiskeysockets/baileys](https://github.com/WhiskeySockets/Bailey
 
 ---
 
+## 💡 Motivation & Background
+
+This project was built to replace the default **Hermes Agent** WhatsApp gateway setup. 
+
+While Hermes Agent provided a solid initial integration, relying on Chinese LLMs (such as DeepSeek or third-party OpenRouter endpoints) frequently resulted in high latency, rate limits, higher API costs, and lower reliability for a real-time 24/7 messaging daemon.
+
+**Antigravity (AGY)** offers a significantly superior foundation:
+- **🚀 Faster & Higher Throughput**: Instant response generation using native Google Gemini 3.6 Flash / 3.1 Pro and Claude 3.7 Sonnet backends.
+- **💰 Superior Cost Efficiency**: Dramatically lower token cost per interaction with generous subscription capacity.
+- **🧠 Better Reasoning & Tool Accuracy**: High precision in multi-step coding, file editing, image generation, and voice note transcription.
+- **🔄 Robust Conversation Memory**: Seamless persistent multi-turn history continuity across all WhatsApp messages.
+
+---
+
+
 ## ✨ Features
 
 - **📱 Self-Chat & QR Code Login**:
