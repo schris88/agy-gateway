@@ -87,6 +87,11 @@ While Hermes Agent provided a solid initial integration, relying on Chinese LLMs
 ### 1. Prerequisites
 - **Node.js**: v18 or higher (`node -v`)
 - **Antigravity CLI**: Installed at `~/.local/bin/agy` or available on system PATH (`agy --version`)
+- **Audio & Speech Recognition Dependencies** (`flac` & `ffmpeg` for Raspberry Pi voice notes):
+  ```bash
+  sudo apt-get update && sudo apt-get install -y ffmpeg flac python3-pip
+  python3 -m pip install SpeechRecognition --break-system-packages
+  ```
 
 ### 2. Clone & Install
 ```bash

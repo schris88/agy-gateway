@@ -15,7 +15,13 @@ fi
 echo "✅ Node.js version: $(node -v)"
 echo "✅ npm version: $(npm -v)"
 
-# 2. Check agy CLI
+# 2. Check & Install System Audio Dependencies (flac, ffmpeg, python3-pip)
+echo "🎙️ Checking system audio dependencies (flac, ffmpeg)..."
+if command -v apt-get &> /dev/null; then
+    sudo apt-get update -qq && sudo apt-get install -y ffmpeg flac python3-pip
+fi
+
+# 3. Check agy CLI
 if ! command -v agy &> /dev/null && [ ! -f "$HOME/.local/bin/agy" ]; then
     echo "⚠️ WARNING: 'agy' binary was not found in PATH or ~/.local/bin/agy."
     echo "   Ensure Antigravity AGY CLI is installed and configured."
