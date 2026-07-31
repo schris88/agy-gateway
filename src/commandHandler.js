@@ -85,6 +85,37 @@ function extractImagePaths(text) {
 }
 
 /**
+ * Scans the AGY conversation brain folder for image files generated during a task.
+ */
+function findGeneratedImagesForTask(convId, startTime) {
+  if (!convId) return [];
+  const found = new Set();
+
+  const homeDir = process.env.HOME || '/home/sxlib';
+  const brainDir = path.join(homeDir, '.gemini/antigravity-cli/brain', convId);
+
+  if (fs.existsSync(brainDir)) {
+    try {
+      const files = fs.readdirSync(brainDir);
+      for (const file of files) {
+        if (file.endsWith('.jpg') || file.endsWith('.png') || file.endsWith('.webp')) {
+          const filePath = path.join(brainDir, file);
+          const stat = fs.statSync(filePath);
+          // If created or modified around or after task start time
+          if (stat.mtimeMs >= startTime - 10000) {
+            found.add(filePath);
+          }
+        }
+      }
+    } catch (e) {
+      logger.warn(`Error scanning brain dir ${brainDir}: ${e.message}`);
+    }
+  }
+
+  return Array.from(found);
+}
+
+/**
  * Handles incoming WhatsApp message text.
  * @param {string} jid WhatsApp chat remote JID
  * @param {string} text Message text
@@ -209,6 +240,7 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
   // Retrieve active session conversation ID for multi-turn history continuity
   const existingSession = chatSessions.get(jid);
   const continueConvId = existingSession ? existingSession.conversationId : null;
+  const taskStartTime = Date.now();
 
   // 9. Start Prompt Execution with Interactive Progress
   const initialAck = isGoal
@@ -253,8 +285,10 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
           saveSessions();
         }
 
-        // Extract any generated image paths referenced in the response
-        const imagePaths = extractImagePaths(finalResponse);
+        // Extract image paths referenced in text AND generated inside AGY brain directory
+        const textImagePaths = extractImagePaths(finalResponse);
+        const brainImagePaths = findGeneratedImagesForTask(convId, taskStartTime);
+        const allImagePaths = Array.from(new Set([...textImagePaths, ...brainImagePaths]));
 
         // Format and send text response
         const formatted = markdownToWhatsApp(finalResponse);
@@ -264,9 +298,10 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
           await gatewayRef.sendMessage(jid, chunks[i]);
         }
 
-        // Send generated image files natively as WhatsApp Image Cards
-        if (gatewayRef.sendImageMessage && imagePaths.length > 0) {
-          for (const imgPath of imagePaths) {
+        // Send all generated image files natively as WhatsApp Image Cards
+        if (gatewayRef.sendImageMessage && allImagePaths.length > 0) {
+          for (const imgPath of allImagePaths) {
+            logger.info(`Sending task image to ${jid}: ${imgPath}`);
             await gatewayRef.sendImageMessage(jid, imgPath, '🎨 AGY Generated Image');
           }
         }
@@ -284,5 +319,6 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
 
 module.exports = {
   handleIncomingMessage,
-  extractImagePaths
+  extractImagePaths,
+  findGeneratedImagesForTask
 };
