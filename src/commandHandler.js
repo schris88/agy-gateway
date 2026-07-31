@@ -474,8 +474,19 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
   const taskStartTime = Date.now();
 
   // 13. Start Prompt Execution with Interactive Progress
-  const modeLabel = isGoal ? 'Goal Task' : (mode === 'plan' ? 'Plan Task' : 'Task');
-  const initialAck = `⏳ *AGY ${modeLabel} Received!* Initializing agent pipeline...\n_${continueConvId ? 'Continuing AGY session' : 'New AGY session'}. Send /cancel to stop, or reply with notes anytime._`;
+  const ackPhrases = [
+    '⚡ Bin dran...',
+    '👍 Alles klar, leg los!',
+    '🧠 Verstanden, ich kümmere mich darum...',
+    '🚀 Auf geht\'s!',
+    '👌 Mach ich!',
+    '🛠️ Bin dabei, packe es an...',
+    '💬 Hab\'s verstanden, starte...',
+    '⏳ Einen Moment, bin am Werk...'
+  ];
+  const randomAck = ackPhrases[Math.floor(Math.random() * ackPhrases.length)];
+  const modeBadge = isGoal ? ' 🎯 [Goal]' : (mode === 'plan' ? ' 📋 [Plan]' : '');
+  const initialAck = `${randomAck}${modeBadge}`;
 
   await gatewayRef.sendMessage(jid, initialAck);
   await gatewayRef.sendTyping(jid);
