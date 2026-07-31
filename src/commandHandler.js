@@ -541,7 +541,26 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
 
 module.exports = {
   handleIncomingMessage,
+  handleMessageReaction,
   extractImagePaths,
   findGeneratedImagesForTask,
   parseRateLimitWaitTime
 };
+
+async function handleMessageReaction(senderJid, targetMsgId, emoji, gatewayRef) {
+  const { recordEmojiFeedback } = require('./feedback');
+  recordEmojiFeedback(targetMsgId, emoji, `Reaction ${emoji} on message ${targetMsgId}`);
+
+  let replyText = '';
+  if (['👍', '❤️', '🔥', '👏', '🙌'].includes(emoji)) {
+    replyText = `${emoji} *Feedback Received!* Thanks! Saved positive response feedback to memory for future improvement.`;
+  } else if (['👎', '💩'].includes(emoji)) {
+    replyText = `${emoji} *Feedback Recorded!* Logged to refine and improve future answers.`;
+  } else if (['💡', '📌', '⭐'].includes(emoji)) {
+    replyText = `${emoji} *Pinned to Memory!* Recorded key concept in your Obsidian Vault memory vault.`;
+  }
+
+  if (replyText && gatewayRef && gatewayRef.sendMessage) {
+    await gatewayRef.sendMessage(senderJid, replyText);
+  }
+}

@@ -212,6 +212,26 @@ async function startWhatsAppGateway() {
       }
     }
   });
+
+  // Listen for WhatsApp message reactions (emojis like 👍, 👎, ❤️, 🔥)
+  sock.ev.on('messages.reaction', async (reactions) => {
+    for (const reaction of reactions) {
+      const senderJid = reaction.key.remoteJid;
+      const fromMe = !!reaction.key.fromMe;
+
+      if (!isJidAllowed(senderJid, fromMe)) continue;
+
+      const emoji = reaction.reaction?.text;
+      const targetMsgId = reaction.key.id;
+
+      if (emoji) {
+        logger.info(`👍 Received reaction ${emoji} from ${senderJid} on message ${targetMsgId}`);
+        const gatewayRef = createGatewayRef();
+        const { handleMessageReaction } = require('./commandHandler');
+        await handleMessageReaction(senderJid, targetMsgId, emoji, gatewayRef);
+      }
+    }
+  });
 }
 
 function isJidAllowed(jid, fromMe) {
