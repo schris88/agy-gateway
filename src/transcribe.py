@@ -1,10 +1,22 @@
 #!/usr/bin/env python3
 import sys
 import os
+import subprocess
+
+def ensure_dependencies():
+    try:
+        import speech_recognition
+    except ImportError:
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "SpeechRecognition", "--break-system-packages", "--user"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
 
 def transcribe(audio_path):
     if not os.path.exists(audio_path):
         return None
+
+    ensure_dependencies()
 
     # 1. Fast Free SpeechRecognition engine (Google Web Speech API - free & fast, no keys required)
     try:
@@ -21,7 +33,7 @@ def transcribe(audio_path):
         except Exception:
             pass
 
-        # Fallback to English
+        # Try English fallback
         try:
             text = r.recognize_google(audio_data, language="en-US")
             if text and text.strip():

@@ -354,18 +354,18 @@ async function extractMessageContent(msg, senderJid, gatewayRef) {
         if (gatewayRef && gatewayRef.sendMessage) {
           await gatewayRef.sendMessage(
             senderJid,
-            `🎙️ *Voice Message Transcribed:* "${transcriptionText}"\n🤖 *Step 2/2:* Forwarding request to AGY AI agent...`
+            `🎙️ *Voice Message Transcribed:*\n💬 _"${transcriptionText}"_\n\n🤖 *Step 2/2:* Forwarding request to AGY AI agent...`
           );
         }
-        promptText = `[Voice Message Transcribed: "${transcriptionText}"] (Audio file: ${audioFileToUse}). Please process this user request.`;
+        promptText = `[Voice Message Transcribed: "${transcriptionText}"] (Audio file: ${audioFileToUse}).\n\nCRITICAL FORMATTING INSTRUCTION: Begin your final response with: "🗣️ *Understood Request:* \\"${transcriptionText}\\"" on the first line so the user clearly sees what voice message was processed. Then fulfill the request.`;
       } else {
         if (gatewayRef && gatewayRef.sendMessage) {
           await gatewayRef.sendMessage(
             senderJid,
-            `🎙️ *Audio Note Received!* Forwarding voice file to AGY for multi-modal processing...`
+            `🎙️ *Audio Note Received!*\n⚠️ *Note:* Fast local transcription produced no output.\n🤖 *Step 2/2:* Forwarding raw voice note to AGY for direct audio transcription & execution...`
           );
         }
-        promptText = `[Received Voice Message Audio File saved at: ${audioFileToUse}]. Transcribe this audio file and fulfill the request.`;
+        promptText = `[Received Voice Message Audio File saved at: ${audioFileToUse}].\n\nCRITICAL FORMATTING INSTRUCTION: First transcribe this audio file, then begin your final response with: "🗣️ *Understood Request:* \\"<your transcription>\\"" on the very first line so the user knows exactly what you heard. Then fulfill the user's request.`;
       }
 
       logger.info(`Downloaded voice note to ${audioFileToUse} (${buffer.length} bytes)`);
