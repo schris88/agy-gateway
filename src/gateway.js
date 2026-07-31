@@ -19,11 +19,29 @@ const { loadReminders } = require('./scheduler');
 
 let sock = null;
 const gatewaySentMessageIds = new Set();
+const gatewayStartTime = Date.now();
+const processedReactions = new Set();
 
-// Clean up old sent message IDs to save memory
+// Seed processedReactions from feedback memory to prevent duplicate notifications across restarts
+try {
+  const { loadFeedback } = require('./feedback');
+  const existingFb = loadFeedback();
+  for (const fb of existingFb) {
+    if (fb.msgId && fb.emoji) {
+      processedReactions.add(`${fb.msgId}_${fb.emoji}`);
+    }
+  }
+} catch (e) {
+  // Ignore error if feedback not initialized
+}
+
+// Clean up old sent message IDs and reaction cache to save memory
 setInterval(() => {
   if (gatewaySentMessageIds.size > 1000) {
     gatewaySentMessageIds.clear();
+  }
+  if (processedReactions.size > 5000) {
+    processedReactions.clear();
   }
 }, 3600000);
 
@@ -247,6 +265,19 @@ async function startWhatsAppGateway() {
 
       const emoji = reaction.reaction?.text;
       const targetMsgId = reaction.key.id;
+      const timestamp = reaction.reaction?.senderTimestampMs || reaction.timestamp;
+
+      // Ignore reactions created before gateway process started (historic sync)
+      if (timestamp && Number(timestamp) < gatewayStartTime - 5000) {
+        logger.info(`Ignoring historic reaction ${emoji} on msg ${targetMsgId}`);
+        continue;
+      }
+
+      const rxKey = `${targetMsgId}_${emoji}`;
+      if (processedReactions.has(rxKey)) {
+        continue;
+      }
+      processedReactions.add(rxKey);
 
       if (emoji) {
         logger.info(`👍 Received reaction ${emoji} from ${senderJid} on message ${targetMsgId}`);
