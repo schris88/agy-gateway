@@ -46,6 +46,40 @@ function saveSessions() {
 loadSessions();
 
 /**
+ * Parses error messages to detect rate limits / 429 errors and extract wait time.
+ */
+function parseRateLimitWaitTime(errorMsg) {
+  if (!errorMsg) return { isRateLimit: false, waitMs: 60000 };
+
+  const lower = errorMsg.toLowerCase();
+  const isRateLimit = lower.includes('429') ||
+                      lower.includes('rate limit') ||
+                      lower.includes('resource_exhausted') ||
+                      lower.includes('quota') ||
+                      lower.includes('too many requests');
+
+  if (!isRateLimit) {
+    return { isRateLimit: false, waitMs: 60000 };
+  }
+
+  let waitMs = 60000; // Default 60 seconds fallback
+
+  const secMatch = lower.match(/(?:retry after|try again in|wait)\s*(\d+)\s*(?:sec|second|s)/);
+  if (secMatch && secMatch[1]) {
+    waitMs = parseInt(secMatch[1], 10) * 1000;
+  } else {
+    const minMatch = lower.match(/(?:retry after|try again in|wait)\s*(\d+)\s*(?:min|minute|m)/);
+    if (minMatch && minMatch[1]) {
+      waitMs = parseInt(minMatch[1], 10) * 60 * 1000;
+    }
+  }
+
+  // Bound wait time between 15 seconds and 1 hour
+  waitMs = Math.max(15000, Math.min(waitMs, 3600000));
+  return { isRateLimit: true, waitMs };
+}
+
+/**
  * Extracts generated or referenced image file paths from text.
  */
 function extractImagePaths(text) {
@@ -250,7 +284,27 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
         },
         async (err) => {
           await gatewayRef.sendTyping(jid, false);
-          await gatewayRef.sendMessage(jid, `❌ *Failed to list skills:* ${err.message}`);
+          const { isRateLimit, waitMs } = parseRateLimitWaitTime(err.message);
+
+          if (isRateLimit) {
+            const waitMin = Math.ceil(waitMs / 60000);
+            const waitSec = Math.ceil((waitMs % 60000) / 1000);
+            const timeStr = waitMin > 1 ? `${waitMin} minutes` : `${waitSec} seconds`;
+
+            await gatewayRef.sendMessage(
+              jid,
+              `⏳ *Rate Limit / Quota Exhausted!*\n\nAGY hit an API rate limit window: \`${err.message.slice(0, 150)}\`\n\n⏸️ *Pausing for ~${timeStr}.* I will automatically send you a notification as soon as the limit clears!`
+            );
+
+            setTimeout(async () => {
+              await gatewayRef.sendMessage(
+                jid,
+                `✅ *Rate Limit Window Cleared!*\n\nAGY rate limit has expired. You can continue sending prompts and commands now!`
+              );
+            }, waitMs);
+          } else {
+            await gatewayRef.sendMessage(jid, `❌ *Failed to list skills:* ${err.message}`);
+          }
         }
       );
     } catch (e) {
@@ -368,7 +422,27 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
       // onError callback
       async (err) => {
         await gatewayRef.sendTyping(jid, false);
-        await gatewayRef.sendMessage(jid, `❌ *Error executing task:* ${err.message}`);
+        const { isRateLimit, waitMs } = parseRateLimitWaitTime(err.message);
+
+        if (isRateLimit) {
+          const waitMin = Math.ceil(waitMs / 60000);
+          const waitSec = Math.ceil((waitMs % 60000) / 1000);
+          const timeStr = waitMin > 1 ? `${waitMin} minutes` : `${waitSec} seconds`;
+
+          await gatewayRef.sendMessage(
+            jid,
+            `⏳ *Rate Limit / Quota Exhausted!*\n\nAGY reached an API rate limit window: \`${err.message.slice(0, 150)}\`\n\n⏸️ *Pausing for ~${timeStr}.* I will automatically send you a notification as soon as the limit clears!`
+          );
+
+          setTimeout(async () => {
+            await gatewayRef.sendMessage(
+              jid,
+              `✅ *Rate Limit Window Cleared!*\n\nAGY rate limit has expired. You can continue sending prompts and commands now!`
+            );
+          }, waitMs);
+        } else {
+          await gatewayRef.sendMessage(jid, `❌ *Error executing task:* ${err.message}`);
+        }
       }
     );
   } catch (err) {
@@ -379,5 +453,6 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
 module.exports = {
   handleIncomingMessage,
   extractImagePaths,
-  findGeneratedImagesForTask
+  findGeneratedImagesForTask,
+  parseRateLimitWaitTime
 };
