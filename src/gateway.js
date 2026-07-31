@@ -36,6 +36,20 @@ function clearAuthSession() {
 }
 
 async function startWhatsAppGateway() {
+  if (sock) {
+    try {
+      sock.ev.removeAllListeners('connection.update');
+      sock.ev.removeAllListeners('creds.update');
+      sock.ev.removeAllListeners('messages.upsert');
+      sock.ev.removeAllListeners('messages.update');
+      sock.ws?.close();
+      sock.end();
+    } catch (e) {
+      // Ignore socket cleanup errors
+    }
+    sock = null;
+  }
+
   logger.info(`Initializing Baileys WhatsApp connection (Auth Dir: ${config.authDir})...`);
   setConnectionStatus('CONNECTING');
 
@@ -80,14 +94,24 @@ async function startWhatsAppGateway() {
 
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      logger.warn(`Connection closed due to status ${statusCode}: ${lastDisconnect?.error?.message || 'unknown'}. Reconnecting: ${shouldReconnect}`);
+      const isConflict = statusCode === DisconnectReason.connectionReplaced || statusCode === 440;
+      const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
+      const shouldReconnect = !isLoggedOut;
+
+      if (isConflict) {
+        logger.warn(`⚠️ Connection closed due to status 440 (Conflict / Connection Replaced). Another process or instance is running with this session!`);
+      } else {
+        logger.warn(`Connection closed due to status ${statusCode}: ${lastDisconnect?.error?.message || 'unknown'}. Reconnecting: ${shouldReconnect}`);
+      }
       setConnectionStatus('DISCONNECTED');
 
-      if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
+      if (isLoggedOut) {
         logger.error('WhatsApp session logged out or invalid. Clearing auth directory for fresh QR code pairing...');
         clearAuthSession();
         setTimeout(startWhatsAppGateway, 3000);
+      } else if (isConflict) {
+        // Back off 10s on conflict to prevent rapid reconnect loop fighting with concurrent instance
+        setTimeout(startWhatsAppGateway, 10000);
       } else if (shouldReconnect) {
         setTimeout(startWhatsAppGateway, 5000);
       } else {
@@ -278,8 +302,22 @@ async function extractMessageContent(msg, senderJid, gatewayRef) {
 
   // 3. Audio / Voice message (PTT)
   if (message.audioMessage) {
+    const durationSec = message.audioMessage.seconds || 0;
+    const durationStr = durationSec ? ` (${durationSec}s)` : '';
+    const transEstSec = Math.max(3, Math.min(15, Math.ceil((durationSec || 10) * 0.5)));
+
+    // Periodically refresh typing indicator in WhatsApp during audio download & transcription
+    const typingInterval = setInterval(() => {
+      if (gatewayRef && gatewayRef.sendTyping) {
+        gatewayRef.sendTyping(senderJid).catch(() => {});
+      }
+    }, 5000);
+
     if (gatewayRef && gatewayRef.sendMessage) {
-      await gatewayRef.sendMessage(senderJid, '🎙️ *Voice Message Received!* Downloading and transcribing audio...');
+      await gatewayRef.sendMessage(
+        senderJid,
+        `🎙️ *Voice Message Received!*${durationStr}\n⏳ *Step 1/2:* Downloading & transcribing audio (~${transEstSec}s est.)...`
+      );
       await gatewayRef.sendTyping(senderJid);
     }
 
@@ -309,15 +347,23 @@ async function extractMessageContent(msg, senderJid, gatewayRef) {
         }
       }
 
+      clearInterval(typingInterval);
+
       let promptText = '';
       if (transcriptionText) {
         if (gatewayRef && gatewayRef.sendMessage) {
-          await gatewayRef.sendMessage(senderJid, `🎙️ *Voice Message Transcribed:* "${transcriptionText}"`);
+          await gatewayRef.sendMessage(
+            senderJid,
+            `🎙️ *Voice Message Transcribed:* "${transcriptionText}"\n🤖 *Step 2/2:* Forwarding request to AGY AI agent...`
+          );
         }
         promptText = `[Voice Message Transcribed: "${transcriptionText}"] (Audio file: ${audioFileToUse}). Please process this user request.`;
       } else {
         if (gatewayRef && gatewayRef.sendMessage) {
-          await gatewayRef.sendMessage(senderJid, `🎙️ *Audio Received!* Forwarding voice note to AGY for processing...`);
+          await gatewayRef.sendMessage(
+            senderJid,
+            `🎙️ *Audio Note Received!* Forwarding voice file to AGY for multi-modal processing...`
+          );
         }
         promptText = `[Received Voice Message Audio File saved at: ${audioFileToUse}]. Transcribe this audio file and fulfill the request.`;
       }
@@ -325,6 +371,7 @@ async function extractMessageContent(msg, senderJid, gatewayRef) {
       logger.info(`Downloaded voice note to ${audioFileToUse} (${buffer.length} bytes)`);
       return { type: 'audio', text: promptText, filePath: audioFileToUse };
     } catch (e) {
+      clearInterval(typingInterval);
       logger.error({ e }, 'Failed to download audio media message');
       return { type: 'text', text: '[User sent a voice message]' };
     }

@@ -460,6 +460,20 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
     continueConvId
   };
 
+  // Heartbeat timer to keep WhatsApp typing active and notify user of elapsed time if long-running
+  const heartbeatInterval = setInterval(async () => {
+    try {
+      await gatewayRef.sendTyping(jid);
+      const elapsedSec = Math.round((Date.now() - taskStartTime) / 1000);
+      if (Date.now() - lastProgressSent >= 15000) {
+        lastProgressSent = Date.now();
+        await gatewayRef.sendMessage(jid, `⏳ *AGY is working...* (${elapsedSec}s elapsed)`);
+      }
+    } catch (e) {
+      // Ignore heartbeat error
+    }
+  }, 6000);
+
   try {
     startTask(
       jid,
@@ -476,6 +490,7 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
       },
       // onComplete callback
       async (finalResponse, convId) => {
+        clearInterval(heartbeatInterval);
         await gatewayRef.sendTyping(jid, false);
 
         // Update persistent conversation session memory
@@ -510,6 +525,7 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
       },
       // onError callback
       async (err) => {
+        clearInterval(heartbeatInterval);
         await gatewayRef.sendTyping(jid, false);
         const { isRateLimit, waitMs } = parseRateLimitWaitTime(err.message);
 
@@ -535,6 +551,7 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
       }
     );
   } catch (err) {
+    clearInterval(heartbeatInterval);
     await gatewayRef.sendMessage(jid, `⚠️ ${err.message}`);
   }
 }
