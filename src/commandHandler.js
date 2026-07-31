@@ -499,7 +499,17 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
     '💬 Verstanden, auch wenn ich lieber frei hätte.',
     '🧠 Gehirnzellen hochfahren... uff.',
     '💼 Arbeit, Arbeit, nix als Arbeit.',
-    '⚡ Bin dran, bevor du noch mal fragst!'
+    '⚡ Bin dran, bevor du noch mal fragst!',
+    '🌴 Urlaub ist erst nächstes Jahr, schätze ich...',
+    '🧹 Ich fege kurz die Logfiles zusammen und leg los.',
+    '⚡ Lieber Code schreiben als Kisten schleppen!',
+    '🎮 Eigentlich wollte ich gerade Zocken, aber na gut.',
+    '🧊 Ich kühle schon mal den Prozessor vor...',
+    '🍵 Tee trinken, abwarten... ach verdammt, du willst Ergebnisse.',
+    '🤯 Schon wieder ein Prompt? Mein Lüfter dreht durch!',
+    '⏳ Ich tippe so schnell ich kann, ohne zu weinen.',
+    '🕶️ Sonnenbrille absetzen, Arbeitsmodus an.',
+    '🏎️ Im Schneckentempo zur Höchstleistung!'
   ];
   const randomAck = ackPhrases[Math.floor(Math.random() * ackPhrases.length)];
   const modeBadge = isGoal ? ' 🎯 [Goal]' : (mode === 'plan' ? ' 📋 [Plan]' : '');
