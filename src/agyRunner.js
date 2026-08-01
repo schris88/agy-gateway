@@ -231,7 +231,8 @@ function getAllActiveTasks() {
       isGoal: task.isGoal,
       durationMs: Date.now() - task.startTime,
       conversationId: task.conversationId,
-      btwCount: task.btwNotes.length
+      btwCount: task.btwNotes.length,
+      lastStatusText: task.lastStatusText || ''
     });
   });
   return tasks;
