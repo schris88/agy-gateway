@@ -20,6 +20,7 @@ const {
 
 const SESSIONS_FILE = path.join(config.authDir, 'chat_sessions.json');
 const chatSessions = new Map();
+const messageQueues = new Map();
 
 // Load sessions from disk
 function loadSessions() {
@@ -186,6 +187,7 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
 
   // 2. Check if user wants to cancel current task
   if (lowerText === '/cancel' || lowerText === '!cancel') {
+    messageQueues.delete(jid);
     const cancelled = cancelTask(jid);
     if (cancelled) {
       await gatewayRef.sendMessage(jid, '🛑 *AGY Task cancelled successfully.*');
@@ -282,24 +284,12 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
 
   // 5. Check if a task is already running in this chat
   if (isTaskRunning(jid)) {
-    let btwNote = cleanText;
-    if (lowerText.startsWith('/btw ') || lowerText.startsWith('!btw ')) {
-      btwNote = cleanText.slice(5).trim();
+    if (!messageQueues.has(jid)) {
+      messageQueues.set(jid, []);
     }
-
-    try {
-      startTask(jid, btwNote, { isBtw: true }, (progressMsg) => {
-        gatewayRef.sendMessage(jid, progressMsg);
-      });
-    } catch (err) {
-      await gatewayRef.sendMessage(jid, `⚠️ ${err.message}`);
-    }
-    return;
-  }
-
-  // 6. Handle explicit /btw when no task is running
-  if (lowerText.startsWith('/btw ') || lowerText.startsWith('!btw ') || lowerText === '/btw' || lowerText === '!btw') {
-    await gatewayRef.sendMessage(jid, 'ℹ️ No task is currently running. You can send a prompt directly or use `/goal <prompt>`.');
+    const queue = messageQueues.get(jid);
+    queue.push(text);
+    await gatewayRef.sendMessage(jid, `⏳ Task is currently running. Your message has been queued (Position: ${queue.length}).`);
     return;
   }
 
@@ -321,7 +311,6 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
 • */status* - Gateway status, active chat session & uptime
 • */reset* or */clear* - Clear chat history & start fresh AGY session
 • */cancel* - Cancel active running task
-• */btw <note>* - Inject mid-task update
 • *<slash skill, e.g. /caveman, /learn>* - All AGY slash skills work directly!
 
 💡 *AGY Context Memory:* ${hasHistory ? '🧠 *Active session memory enabled*' : '🆕 *New session*'}
@@ -549,6 +538,16 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
     }
   };
 
+  const processNextQueueItem = () => {
+    const queue = messageQueues.get(jid);
+    if (queue && queue.length > 0) {
+      const nextText = queue.shift();
+      gatewayRef.sendMessage(jid, `🔄 Starting next queued task...`).then(() => {
+        handleIncomingMessage(jid, nextText, gatewayRef).catch(e => logger.error({err: e}, 'Queue processor error'));
+      }).catch(e => logger.error({err: e}, 'Queue processor error'));
+    }
+  };
+
   try {
     startTask(
       jid,
@@ -619,6 +618,8 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
             await gatewayRef.sendDocumentMessage(jid, docPath, `📄 *AGY Generated File:* ${path.basename(docPath)}`);
           }
         }
+
+        processNextQueueItem();
       },
       // onError callback
       async (err) => {
@@ -645,11 +646,14 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
         } else {
           await gatewayRef.sendMessage(jid, `❌ *Error executing task:* ${err.message}`);
         }
+
+        processNextQueueItem();
       },
       // onCancel callback
       async () => {
         cleanupHeartbeat();
         await gatewayRef.sendTyping(jid, false);
+        processNextQueueItem();
       }
     );
   } catch (err) {

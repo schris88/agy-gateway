@@ -204,7 +204,7 @@ app.get('/', async (req, res) => {
             <div class="task-item">
               <div class="task-info">
                 <div class="task-prompt" title="\${t.prompt}">\${t.isGoal ? '🎯 ' : ''}\${t.prompt}</div>
-                <div class="task-meta">⏱ \${fmt(t.durationMs)} &nbsp;|&nbsp; \${t.jid.split('@')[0]}\${t.btwCount ? ' &nbsp;|&nbsp; 💬 ' + t.btwCount + ' note(s)' : ''}</div>
+                <div class="task-meta">⏱ \${fmt(t.durationMs)} &nbsp;|&nbsp; \${t.jid.split('@')[0]}</div>
                 \${t.lastStatusText ? '<div class="task-tool">' + t.lastStatusText.replace(/\\*/g,'') + '</div>' : ''}
               </div>
               <button class="cancel-btn" onclick="cancelTask('\${t.jid}')">✖ Cancel</button>

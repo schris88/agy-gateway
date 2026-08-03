@@ -18,17 +18,7 @@ const activeTasks = new Map();
  */
 function startTask(jid, prompt, options = {}, onProgress, onComplete, onError, onCancel) {
   if (activeTasks.has(jid)) {
-    const existing = activeTasks.get(jid);
-    if (options.isBtw) {
-      existing.btwNotes.push(prompt);
-      logger.info(`Added /btw note to active task for ${jid}: ${prompt}`);
-      if (onProgress) {
-        onProgress(`💬 *Added note to active task:* "${prompt}"`);
-      }
-      return existing;
-    } else {
-      throw new Error('A task is already running in this chat. Use /cancel to stop it or send a note with /btw.');
-    }
+    throw new Error('A task is already running in this chat. Please wait until it finishes or use /cancel to stop it.');
   }
 
   const args = [
@@ -69,7 +59,6 @@ function startTask(jid, prompt, options = {}, onProgress, onComplete, onError, o
     startTime: Date.now(),
     isGoal: !!options.isGoal,
     conversationId: null,
-    btwNotes: [],
     lastStatusText: '',
     fullText: '',
     cancelled: false,
@@ -108,9 +97,6 @@ function startTask(jid, prompt, options = {}, onProgress, onComplete, onError, o
 
     if (code === 0 && taskState.fullText) {
       let finalAnswer = taskState.fullText.trim();
-      if (taskState.btwNotes.length > 0) {
-        finalAnswer += `\n\n_Note: Interrupted with ${taskState.btwNotes.length} /btw update(s)._`;
-      }
       onComplete(finalAnswer, taskState.conversationId, { tokenUsage: taskState.tokenUsage });
     } else if (code === 0 && !taskState.fullText) {
       onComplete("✅ Task finished with no text output.", taskState.conversationId, { tokenUsage: taskState.tokenUsage });
@@ -234,7 +220,6 @@ function getAllActiveTasks() {
       isGoal: task.isGoal,
       durationMs: Date.now() - task.startTime,
       conversationId: task.conversationId,
-      btwCount: task.btwNotes.length,
       lastStatusText: task.lastStatusText || ''
     });
   });
