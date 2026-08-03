@@ -332,6 +332,10 @@ function isJidAllowed(jid, fromMe, meUser) {
     return config.whatsappAllowSelf;
   }
 
+  if (fromMe) {
+    return false; // Prevent gateway from triggering on own messages in other chats
+  }
+
   // 4. External Chat (incoming from other contact like Mom, or outgoing in Mom's chat window)
   if (config.whatsappAllowedNumbers.includes('*')) {
     return true;
