@@ -452,8 +452,13 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
   }
 
   if (!prompt) {
-    await gatewayRef.sendMessage(jid, '⚠️ Please provide a prompt. Example: `/goal build a web scraper` or `/plan design architecture`');
+    await gatewayRef.sendMessage(jid, '⚠️ Please provide a prompt. Example: `/goal build a web scraper`');
     return;
+  }
+
+  // Token-Saving: Append a system directive for brevity unless user overrides
+  if (!lowerText.includes('ausführlich') && !lowerText.includes('detailed')) {
+    prompt += '\n\n[SYSTEM DIRECTIVE: Keep your response as brief and concise as possible to save tokens. Cut out all conversational filler.]';
   }
 
   // Retrieve active session conversation ID for multi-turn history continuity (auto-reset after 24h TTL)
@@ -559,17 +564,27 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
         }
       },
       // onComplete callback
-      async (finalResponse, convId) => {
+      async (finalResponse, convId, stats = {}) => {
         cleanupHeartbeat();
         await gatewayRef.sendTyping(jid, false);
 
-        // Update persistent conversation session memory
+        // Update persistent conversation session memory & turn counters
+        let currentTurns = 1;
         if (convId) {
+          const prevSession = chatSessions.get(jid) || {};
+          currentTurns = (prevSession.turns || 0) + 1;
           chatSessions.set(jid, {
             conversationId: convId,
+            turns: currentTurns,
             lastUpdated: Date.now()
           });
           saveSessions();
+        }
+
+        // Advisory token notice if conversation session is getting long
+        let advisoryText = '';
+        if (currentTurns >= 12 && currentTurns % 6 === 0) {
+          advisoryText = `\n\n💡 _Notice: This session is ${currentTurns} turns long. Send \`/reset\` anytime if you'd like to start a fresh, fast context._`;
         }
 
         // Extract image & document paths referenced in text AND generated inside AGY brain directory
@@ -582,7 +597,11 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
         const chunks = splitMessage(formatted, 3800);
 
         for (let i = 0; i < chunks.length; i++) {
-          await gatewayRef.sendMessage(jid, chunks[i]);
+          let chunk = chunks[i];
+          if (i === chunks.length - 1 && advisoryText) {
+            chunk += advisoryText;
+          }
+          await gatewayRef.sendMessage(jid, chunk);
         }
 
         // Send all generated image files natively as WhatsApp Image Cards

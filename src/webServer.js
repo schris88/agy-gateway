@@ -23,10 +23,10 @@ function setConnectionStatus(status, user = null) {
 function createDashboardGatewayRef() {
   // Minimal gateway ref for tasks launched from web dashboard
   return {
-    sendMessage: async () => {},
-    sendImageMessage: async () => {},
-    sendDocumentMessage: async () => {},
-    sendTyping: async () => {},
+    sendMessage: async () => { },
+    sendImageMessage: async () => { },
+    sendDocumentMessage: async () => { },
+    sendTyping: async () => { },
   };
 }
 
@@ -162,22 +162,9 @@ app.get('/', async (req, res) => {
       <div class="stat-val">${usedMem} GB <span style="font-size:1rem;color:var(--muted);">/ ${totalMem} GB RAM</span></div>
       <div class="stat-label">Memory Usage</div>
       <div style="margin-top:15px;">
-        <div class="list-item"><span>Processor:</span> <strong>${cpuCount} Cores (${cpuModel.slice(0,20)})</strong></div>
+        <div class="list-item"><span>Processor:</span> <strong>${cpuCount} Cores (${cpuModel.slice(0, 20)})</strong></div>
         <div class="list-item"><span>Daemon Uptime:</span> <strong id="uptime">${uptimeMin} min</strong></div>
         <div class="list-item"><span>Platform:</span> <strong>${os.type()} ${os.arch()}</strong></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Native AGY Slash Controls</h2>
-      <div style="font-size:0.9rem;color:var(--muted);line-height:1.6;">
-        Send commands directly in your WhatsApp chat:<br>
-        • <code>/goal &lt;prompt&gt;</code> — High reasoning task<br>
-        • <code>/plan &lt;prompt&gt;</code> — Step-by-step plan<br>
-        • <code>/remind &lt;time&gt; &lt;msg&gt;</code> — Schedule alert<br>
-        • <code>/export &lt;path&gt;</code> — Download file card<br>
-        • <code>/models</code> — List available AGY LLMs<br>
-        • <code>/status</code> — Live gateway status
       </div>
     </div>
 

@@ -111,9 +111,9 @@ function startTask(jid, prompt, options = {}, onProgress, onComplete, onError, o
       if (taskState.btwNotes.length > 0) {
         finalAnswer += `\n\n_Note: Interrupted with ${taskState.btwNotes.length} /btw update(s)._`;
       }
-      onComplete(finalAnswer, taskState.conversationId);
+      onComplete(finalAnswer, taskState.conversationId, { tokenUsage: taskState.tokenUsage });
     } else if (code === 0 && !taskState.fullText) {
-      onComplete("✅ Task finished with no text output.", taskState.conversationId);
+      onComplete("✅ Task finished with no text output.", taskState.conversationId, { tokenUsage: taskState.tokenUsage });
     } else {
       logger.error(`AGY process exited with code ${code}: ${stderrOutput}`);
       onError(new Error(`AGY process exited with code ${code}. ${stderrOutput.slice(-200)}`));
@@ -167,6 +167,9 @@ function handleStreamEvent(taskState, data, onProgress) {
   if (data.event === 'result' && data.result) {
     if (data.result.response) {
       taskState.fullText = data.result.response;
+    }
+    if (data.result.usage || data.result.token_usage) {
+      taskState.tokenUsage = data.result.usage || data.result.token_usage;
     }
   }
 }
