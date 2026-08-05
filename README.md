@@ -15,7 +15,7 @@ Built using **[@whiskeysockets/baileys](https://github.com/WhiskeySockets/Bailey
 
 - **📱 Self-Chat & QR Code Login**:
   - Displays a clean ASCII QR code directly in the terminal CLI upon launch.
-  - Web dashboard hosted at `http://<server-ip>:3000` to view the QR code in any browser for remote headless setup.
+  - Web dashboard hosted at `http://<server-ip>:3000` for remote headless setup via QR code, viewing active running tasks, cancelling tasks, and an interactive launch form.
   - Native **Self-Chat** support: Message yourself in WhatsApp ("Message Yourself" / own contact number) to execute commands.
 - **🟢 24/7 Always Online Daemon**:
   - Auto-reconnect with exponential backoff on network disconnections.
@@ -30,7 +30,8 @@ Built using **[@whiskeysockets/baileys](https://github.com/WhiskeySockets/Bailey
   - Intermediate status reporting when AGY executes tools (e.g. `🛠️ Tool: run_command: git status`).
   - Markdown-to-WhatsApp text formatting (`*bold*`, `_italic_`, ` ```code``` `).
   - Smart message splitting for responses exceeding WhatsApp's character limit (>4000 chars).
-  - Dynamic mid-task interactivity: Send notes or replies anytime during task execution (`/btw <note>`).
+  - **Message Queueing**: Send multiple prompts while a task is running, and they will automatically queue up and execute sequentially.
+  - **Token Optimization**: Includes a token saving system directive and non-intrusive session turn advisory notice.
 - **🎯 Native Gateway Commands**:
   - `/goal <prompt>` — Spawns long-running goal tasks with high reasoning effort and step-by-step updates.
   - `/plan <prompt>` — Executes planning mode before implementation.
@@ -136,7 +137,6 @@ Open **`http://localhost:3000`** in your browser or view terminal output to scan
 | `/reset` or `/clear` | Clear chat history session & start fresh | `/reset` |
 | `/status` | View gateway uptime and running tasks | `/status` |
 | `/cancel` | Cancel active task running in chat | `/cancel` |
-| `/btw <note>` | Inject mid-task update to running task | `/btw Ensure error handling is included` |
 | `/models` | List available native AGY AI models | `/models` |
 | `/skills` | List all installed AGY skills & plugins | `/skills` |
 | `<any text>` | Send regular prompt to AGY | `Explain the project structure` |
