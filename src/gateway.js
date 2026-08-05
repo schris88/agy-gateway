@@ -239,7 +239,8 @@ async function startWhatsAppGateway() {
       const fromMe = !!msg.key.fromMe;
       const senderJid = msg.key.remoteJid;
 
-      const meUser = sock?.user || state?.creds?.me;
+      // Merge sock.user and state.creds.me because sock.user sometimes lacks the .lid property
+      const meUser = { ...(state?.creds?.me || {}), ...(sock?.user || {}) };
 
       // Filter allowed JIDs (self-chat only by default, groups blocked by default)
       if (!isJidAllowed(senderJid, fromMe, meUser)) {
@@ -269,7 +270,7 @@ async function startWhatsAppGateway() {
     for (const reaction of reactions) {
       const senderJid = reaction.key.remoteJid;
       const fromMe = !!reaction.key.fromMe;
-      const meUser = sock?.user || state?.creds?.me;
+      const meUser = { ...(state?.creds?.me || {}), ...(sock?.user || {}) };
 
       if (!isJidAllowed(senderJid, fromMe, meUser)) continue;
 
