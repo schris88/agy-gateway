@@ -147,7 +147,7 @@ function findGeneratedFilesForTask(convId, startTime) {
             const ext = path.extname(file).toLowerCase();
             if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
               images.add(filePath);
-            } else if (['.pdf', '.csv', '.xlsx', '.docx', '.zip', '.txt', '.html', '.json'].includes(ext)) {
+            } else if (['.pdf', '.csv', '.xlsx', '.docx', '.zip', '.txt', '.html', '.json', '.stl', '.step', '.3mf'].includes(ext)) {
               documents.add(filePath);
             }
           }

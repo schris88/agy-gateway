@@ -95,6 +95,28 @@ function startTask(jid, prompt, options = {}, onProgress, onComplete, onError, o
       return;
     }
 
+    // Auto-retry once if authentication expired/required (token refresh in progress)
+    if (code !== 0 && stderrOutput.includes('authentication required') && !options._isRetry) {
+      logger.warn(`AGY auth error detected for ${jid}. Retrying in 1.5s after token refresh...`);
+      setTimeout(() => {
+        try {
+          startTask(
+            jid,
+            prompt,
+            { ...options, _isRetry: true },
+            onProgress,
+            onComplete,
+            onError,
+            onCancel
+          );
+        } catch (retryErr) {
+          logger.error({ retryErr }, 'Failed to schedule AGY auth retry');
+          onError(retryErr);
+        }
+      }, 1500);
+      return;
+    }
+
     if (code === 0 && taskState.fullText) {
       let finalAnswer = taskState.fullText.trim();
       onComplete(finalAnswer, taskState.conversationId, { tokenUsage: taskState.tokenUsage });
@@ -116,6 +138,102 @@ function startTask(jid, prompt, options = {}, onProgress, onComplete, onError, o
   return taskState;
 }
 
+function formatHumanReadableProgress(toolName, params = {}) {
+  const clean = (val) => {
+    if (!val || typeof val !== 'string') return '';
+    let s = val.trim();
+    if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+      try { s = JSON.parse(s); } catch { s = s.slice(1, -1); }
+    }
+    return s.trim();
+  };
+
+  const summary = clean(params.toolSummary);
+  const action = clean(params.toolAction);
+
+  // Highest priority: Human-readable summary/action provided by AGY model
+  if (summary && summary.length > 2) {
+    return `⚙️ ${summary}`;
+  }
+  if (action && action.length > 2) {
+    return `⚙️ ${action}`;
+  }
+
+  // Fallback heuristics per tool type
+  switch (toolName) {
+    case 'run_command': {
+      const cmd = clean(params.CommandLine);
+      if (/^sc\b/.test(cmd)) {
+        const sub = cmd.split(/\s+/).slice(0, 3).join(' ');
+        return `📊 Scalable Capital: ${sub}`;
+      }
+      if (/git\b/.test(cmd)) return '🔄 Synchronisiere Git-Repository';
+      if (/curl\b/.test(cmd)) return '🌐 Führe Netzwerk-/API-Abfrage durch';
+      if (/python/.test(cmd)) {
+        const m = cmd.match(/[\w_-]+\.py/);
+        return m ? `🐍 Führe Skript aus (${m[0]})` : '🐍 Führe Python-Code aus';
+      }
+      if (/ps |pgrep|pkill/.test(cmd)) return '🔍 Prüfe laufende Systemprozesse';
+      if (/ls |find /.test(cmd)) return '📁 Durchsuche Dateien';
+      if (/grep /.test(cmd)) return '🔎 Durchsuche Text/Dateien';
+      const shortCmd = cmd.split('\n')[0].slice(0, 40);
+      return `💻 Führe Befehl aus: ${shortCmd}`;
+    }
+    case 'view_file': {
+      const p = clean(params.AbsolutePath) || clean(params.TargetFile);
+      const file = p ? p.split('/').pop() : 'Datei';
+      return `📄 Lese Datei ${file}`;
+    }
+    case 'replace_file_content': {
+      const p = clean(params.TargetFile) || clean(params.AbsolutePath);
+      const file = p ? p.split('/').pop() : 'Datei';
+      return `✏️ Bearbeite Datei ${file}`;
+    }
+    case 'write_to_file': {
+      const p = clean(params.TargetFile) || clean(params.AbsolutePath);
+      const file = p ? p.split('/').pop() : 'Datei';
+      return `📝 Erstelle Datei ${file}`;
+    }
+    case 'search_web': {
+      const q = clean(params.query || params.Query);
+      return `🔍 Web-Suche: "${q.slice(0, 45)}"`;
+    }
+    case 'read_url_content': {
+      const url = clean(params.Url || params.URL || params.url);
+      try {
+        const host = new URL(url).hostname;
+        return `🌐 Lese Webseite (${host})`;
+      } catch {
+        return '🌐 Lese Web-Inhalte';
+      }
+    }
+    case 'find_by_name': {
+      const pat = clean(params.Pattern);
+      return `🔎 Suche Dateien (${pat || 'Pattern'})`;
+    }
+    case 'grep_search': {
+      const q = clean(params.Query);
+      return `🔎 Durchsuche Code: "${q.slice(0, 35)}"`;
+    }
+    case 'list_dir': {
+      const dir = clean(params.DirectoryPath);
+      const dirName = dir ? dir.split('/').pop() || dir : 'Verzeichnis';
+      return `📂 Lese Verzeichnis ${dirName}`;
+    }
+    case 'manage_task': {
+      const act = clean(params.Action);
+      return `⏱️ Verwalte Hintergrundaufgabe (${act || 'Status'})`;
+    }
+    case 'call_mcp_tool': {
+      const srv = clean(params.ServerName);
+      const tool = clean(params.ToolName);
+      return `🔌 Tool: ${srv} / ${tool}`;
+    }
+    default:
+      return `🛠️ Führe ${toolName} aus`;
+  }
+}
+
 function handleStreamEvent(taskState, data, onProgress) {
   if (taskState.cancelled) return;
 
@@ -128,18 +246,9 @@ function handleStreamEvent(taskState, data, onProgress) {
 
     if (step.state === 'ACTIVE' && step.step_type === 'tool') {
       const toolName = step.tool_name || (step.tool_info && step.tool_info.name) || 'unknown tool';
-      let paramDesc = '';
-      if (step.tool_info && step.tool_info.parameters) {
-        const params = step.tool_info.parameters;
-        if (params.CommandLine) paramDesc = `: \`${params.CommandLine.slice(0, 60)}\``;
-        else if (params.Query || params.query) paramDesc = `: \`${params.Query || params.query}\``;
-        else if (params.TargetFile) paramDesc = `: \`${params.TargetFile.split('/').pop()}\``;
-        else if (params.AbsolutePath) paramDesc = `: \`${params.AbsolutePath.split('/').pop()}\``;
-        else if (params.Url || params.URL || params.url) paramDesc = `: \`${params.Url || params.URL || params.url}\``;
-        else if (params.prompt || params.Prompt) paramDesc = `: \`${(params.prompt || params.Prompt).slice(0, 50)}\``;
-      }
-      const statusMsg = `🛠️ *Tool:* \`${toolName}\`${paramDesc}`;
-      if (statusMsg !== taskState.lastStatusText) {
+      const params = (step.tool_info && step.tool_info.parameters) || {};
+      const statusMsg = formatHumanReadableProgress(toolName, params);
+      if (statusMsg && statusMsg !== taskState.lastStatusText) {
         taskState.lastStatusText = statusMsg;
         if (onProgress) onProgress(statusMsg);
       }
