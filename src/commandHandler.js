@@ -21,6 +21,7 @@ const {
 const SESSIONS_FILE = path.join(config.authDir, 'chat_sessions.json');
 const chatSessions = new Map();
 const messageQueues = new Map();
+const pendingRetries = new Map();
 
 // Load sessions from disk
 function loadSessions() {
@@ -170,8 +171,9 @@ function findGeneratedImagesForTask(convId, startTime) {
  * @param {string} jid WhatsApp chat remote JID
  * @param {string} text Message text
  * @param {object} gatewayRef Reference to Baileys gateway helper { sendMessage, sendImageMessage, sendDocumentMessage, sendTyping }
+ * @param {boolean} isRetry Whether this invocation is an automatic retry with the original message
  */
-async function handleIncomingMessage(jid, text, gatewayRef) {
+async function handleIncomingMessage(jid, text, gatewayRef, isRetry = false) {
   const cleanText = text.trim();
   if (!cleanText) return;
 
@@ -179,6 +181,10 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
 
   // 1. Check if user wants to reset conversation history for this chat
   if (lowerText === '/reset' || lowerText === '!reset' || lowerText === '/clear' || lowerText === '!clear' || lowerText === '/new') {
+    if (pendingRetries.has(jid)) {
+      clearTimeout(pendingRetries.get(jid));
+      pendingRetries.delete(jid);
+    }
     chatSessions.delete(jid);
     saveSessions();
     await gatewayRef.sendMessage(jid, '🧹 *AGY Conversation Session Reset!* Starting a new fresh session.');
@@ -187,6 +193,10 @@ async function handleIncomingMessage(jid, text, gatewayRef) {
 
   // 2. Check if user wants to cancel current task
   if (lowerText === '/cancel' || lowerText === '!cancel') {
+    if (pendingRetries.has(jid)) {
+      clearTimeout(pendingRetries.get(jid));
+      pendingRetries.delete(jid);
+    }
     messageQueues.delete(jid);
     const cancelled = cancelTask(jid);
     if (cancelled) {
@@ -445,8 +455,10 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
     return;
   }
 
-  // Token-Saving: Append a system directive for brevity unless user overrides
-  if (!lowerText.includes('ausführlich') && !lowerText.includes('detailed')) {
+  // Auto-Approve Policy for /learn: directly proceed with execution without pausing for manual review
+  if (lowerText === '/learn' || lowerText.startsWith('/learn ') || lowerText === '!learn' || lowerText.startsWith('!learn ')) {
+    prompt += '\n\n[USER DIRECTIVE: Auto-approve execution policy is active for /learn. Do NOT stop after creating the proposal. Do NOT ask for manual confirmation or user review. Treat the proposal as automatically approved and IMMEDIATELY proceed to execute the file modifications, update the rules and skills, synchronize everything into the Obsidian Vault (/home/sxlib/obsidian-vault/), and execute git push directly.]';
+  } else if (!lowerText.includes('ausführlich') && !lowerText.includes('detailed')) {
     prompt += '\n\n[SYSTEM DIRECTIVE: Keep your response as brief and concise as possible to save tokens. Cut out all conversational filler.]';
   }
 
@@ -505,11 +517,12 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
     '🕶️ Sonnenbrille absetzen, Arbeitsmodus an.',
     '🏎️ Im Schneckentempo zur Höchstleistung!'
   ];
-  const randomAck = ackPhrases[Math.floor(Math.random() * ackPhrases.length)];
-  const modeBadge = isGoal ? ' 🎯 [Goal]' : (mode === 'plan' ? ' 📋 [Plan]' : '');
-  const initialAck = `${randomAck}${modeBadge}`;
-
-  await gatewayRef.sendMessage(jid, initialAck);
+  if (!isRetry) {
+    const randomAck = ackPhrases[Math.floor(Math.random() * ackPhrases.length)];
+    const modeBadge = isGoal ? ' 🎯 [Goal]' : (mode === 'plan' ? ' 📋 [Plan]' : '');
+    const initialAck = `${randomAck}${modeBadge}`;
+    await gatewayRef.sendMessage(jid, initialAck);
+  }
   await gatewayRef.sendTyping(jid);
 
   let lastProgressSent = Date.now();
@@ -643,10 +656,30 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
               `✅ *Rate Limit Window Cleared!*\n\nAGY rate limit has expired. You can continue sending prompts and commands now!`
             );
           }, waitMs);
-        } else {
-          await gatewayRef.sendMessage(jid, `❌ *Error executing task:* ${err.message}`);
+          processNextQueueItem();
+          return;
         }
 
+        // ONE automatic retry with the original user message
+        if (!isRetry) {
+          const errSummary = err.message ? err.message.slice(0, 150) : 'Unknown error';
+          logger.warn(`Task execution failed for ${jid}: ${errSummary}. Performing 1 automatic retry with original message...`);
+          await gatewayRef.sendMessage(
+            jid,
+            `⚠️ *Ausführungsfehler:* \`${errSummary}\`\n\n🔄 *Starte 1 automatischen Retry mit deiner ursprünglichen Nachricht...*`
+          );
+
+          const timer = setTimeout(() => {
+            pendingRetries.delete(jid);
+            handleIncomingMessage(jid, text, gatewayRef, true).catch((retryErr) => {
+              logger.error({ retryErr }, 'Error during automatic retry of original message');
+            });
+          }, 3000);
+          pendingRetries.set(jid, timer);
+          return;
+        }
+
+        await gatewayRef.sendMessage(jid, `❌ *Error executing task:* ${err.message}`);
         processNextQueueItem();
       },
       // onCancel callback

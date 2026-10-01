@@ -1,3 +1,17 @@
+const dns = require('dns');
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch (e) {}
+
+const http = require('http');
+const https = require('https');
+
+const ipv4HttpsAgent = new https.Agent({ family: 4, keepAlive: true, timeout: 60000 });
+const ipv4HttpAgent = new http.Agent({ family: 4, keepAlive: true, timeout: 60000 });
+
+http.globalAgent = ipv4HttpAgent;
+https.globalAgent = ipv4HttpsAgent;
+
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -229,6 +243,27 @@ async function startWhatsAppGateway() {
         continue;
       }
 
+      // Helper to reliably extract timestamp in ms from any Baileys format (number, Long, object)
+      const getTimestampMs = (ts) => {
+        if (!ts) return null;
+        if (typeof ts === 'number') return ts * 1000;
+        if (typeof ts === 'bigint') return Number(ts) * 1000;
+        if (typeof ts === 'string') return Number(ts) * 1000;
+        if (typeof ts === 'object') {
+          if (typeof ts.toNumber === 'function') return ts.toNumber() * 1000;
+          if ('low' in ts) return (ts.low + (ts.high || 0) * 4294967296) * 1000;
+        }
+        const n = Number(ts);
+        return isNaN(n) ? null : n * 1000;
+      };
+
+      // Ignore messages created before gateway process started (historic sync on reconnection)
+      const msgTimeMs = getTimestampMs(msg.messageTimestamp);
+      if (msgTimeMs && msgTimeMs < gatewayStartTime - 5000) {
+        logger.info(`Ignoring historic message ${messageId} from ${new Date(msgTimeMs).toISOString()}`);
+        continue;
+      }
+
       // Ignore duplicate incoming message IDs (prevents double executions for self-chats/re-transmissions)
       if (processedIncomingMessageIds.has(messageId)) {
         logger.info(`Ignoring duplicate incoming message ID: ${messageId}`);
@@ -382,6 +417,37 @@ function extractQuotedContext(message) {
   return '';
 }
 
+async function downloadMediaWithRetry(msg, type = 'buffer', maxRetries = 3) {
+  let lastErr = null;
+  const downloadOpts = {
+    options: {
+      timeout: 60000,
+      maxContentLength: 50 * 1024 * 1024,
+      maxBodyLength: 50 * 1024 * 1024,
+      httpsAgent: ipv4HttpsAgent,
+      httpAgent: ipv4HttpAgent
+    }
+  };
+  const ctx = sock?.updateMediaMessage ? { reuploadRequest: (m) => sock.updateMediaMessage(m), logger } : undefined;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const buffer = await downloadMediaMessage(msg, type, downloadOpts, ctx);
+      if (buffer && buffer.length > 0) {
+        return buffer;
+      }
+      throw new Error('Downloaded buffer is empty');
+    } catch (err) {
+      lastErr = err;
+      logger.warn(`Media download attempt ${attempt}/${maxRetries} failed: ${err.message || err}`);
+      if (attempt < maxRetries) {
+        await new Promise((res) => setTimeout(res, 1500 * attempt));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 async function extractMessageContent(msg, senderJid, gatewayRef) {
   const message = msg.message;
   if (!message) return null;
@@ -399,7 +465,7 @@ async function extractMessageContent(msg, senderJid, gatewayRef) {
   // 2. Image message
   if (message.imageMessage) {
     try {
-      const buffer = await downloadMediaMessage(msg, 'buffer', {});
+      const buffer = await downloadMediaWithRetry(msg, 'buffer');
       const filename = `whatsapp_img_${Date.now()}_${Math.floor(Math.random()*1000)}.jpg`;
       const filePath = path.join('/tmp', filename);
       fs.writeFileSync(filePath, buffer);
@@ -410,11 +476,17 @@ async function extractMessageContent(msg, senderJid, gatewayRef) {
       logger.info(`Downloaded image to ${filePath} (${buffer.length} bytes)`);
       return { type: 'image', text: promptText, filePath };
     } catch (e) {
-      logger.error({ e }, 'Failed to download image media message');
+      logger.error({ e }, 'Failed to download image media message after retries');
       if (message.imageMessage.caption) {
         return { type: 'text', text: message.imageMessage.caption };
       }
-      return { type: 'text', text: '[User sent an image file]' };
+      if (gatewayRef && gatewayRef.sendMessage) {
+        await gatewayRef.sendMessage(
+          senderJid,
+          '⚠️ *Bild-Download fehlgeschlagen:*\nDas Bild konnte vom WhatsApp-Server nicht heruntergeladen werden. Bitte versuche es erneut.'
+        ).catch(() => {});
+      }
+      return null;
     }
   }
 
@@ -440,7 +512,7 @@ async function extractMessageContent(msg, senderJid, gatewayRef) {
     }
 
     try {
-      const buffer = await downloadMediaMessage(msg, 'buffer', {});
+      const buffer = await downloadMediaWithRetry(msg, 'buffer');
       const oggPath = path.join('/tmp', `whatsapp_audio_${Date.now()}_${Math.floor(Math.random()*1000)}.ogg`);
       const flacPath = oggPath.replace('.ogg', '.flac');
       const wavPath = oggPath.replace('.ogg', '.wav');
@@ -501,15 +573,21 @@ async function extractMessageContent(msg, senderJid, gatewayRef) {
       return { type: 'audio', text: promptText, filePath: audioFileToUse };
     } catch (e) {
       clearInterval(typingInterval);
-      logger.error({ e }, 'Failed to download audio media message');
-      return { type: 'text', text: '[User sent a voice message]' };
+      logger.error({ e }, 'Failed to download audio media message after retries');
+      if (gatewayRef && gatewayRef.sendMessage) {
+        await gatewayRef.sendMessage(
+          senderJid,
+          '⚠️ *Download fehlgeschlagen:*\nDie Sprachnachricht konnte vom WhatsApp-Server nicht heruntergeladen werden. Bitte versuche es noch einmal oder sende deinen Text als Nachricht.'
+        ).catch(() => {});
+      }
+      return null;
     }
   }
 
   // 4. Video message
   if (message.videoMessage) {
     try {
-      const buffer = await downloadMediaMessage(msg, 'buffer', {});
+      const buffer = await downloadMediaWithRetry(msg, 'buffer');
       const filePath = path.join('/tmp', `whatsapp_video_${Date.now()}_${Math.floor(Math.random()*1000)}.mp4`);
       fs.writeFileSync(filePath, buffer);
       const caption = message.videoMessage.caption ? ` Caption: "${message.videoMessage.caption}"` : '';
@@ -522,7 +600,7 @@ async function extractMessageContent(msg, senderJid, gatewayRef) {
   // 5. Document message
   if (message.documentMessage) {
     try {
-      const buffer = await downloadMediaMessage(msg, 'buffer', {});
+      const buffer = await downloadMediaWithRetry(msg, 'buffer');
       const fileName = message.documentMessage.fileName || `doc_${Date.now()}`;
       const filePath = path.join('/tmp', fileName);
       fs.writeFileSync(filePath, buffer);

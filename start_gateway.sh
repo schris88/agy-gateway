@@ -46,5 +46,6 @@ fi
 sleep 1
 
 # Pull updates and start the gateway
+export NODE_OPTIONS="--dns-result-order=ipv4first ${NODE_OPTIONS:-}"
 git pull && npm run start
 

@@ -95,27 +95,6 @@ function startTask(jid, prompt, options = {}, onProgress, onComplete, onError, o
       return;
     }
 
-    // Auto-retry once if authentication expired/required (token refresh in progress)
-    if (code !== 0 && stderrOutput.includes('authentication required') && !options._isRetry) {
-      logger.warn(`AGY auth error detected for ${jid}. Retrying in 1.5s after token refresh...`);
-      setTimeout(() => {
-        try {
-          startTask(
-            jid,
-            prompt,
-            { ...options, _isRetry: true },
-            onProgress,
-            onComplete,
-            onError,
-            onCancel
-          );
-        } catch (retryErr) {
-          logger.error({ retryErr }, 'Failed to schedule AGY auth retry');
-          onError(retryErr);
-        }
-      }, 1500);
-      return;
-    }
 
     if (code === 0 && taskState.fullText) {
       let finalAnswer = taskState.fullText.trim();

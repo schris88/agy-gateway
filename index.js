@@ -1,3 +1,8 @@
+const dns = require('dns');
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch (e) {}
+
 const fs = require('fs');
 const logger = require('./src/logger');
 const config = require('./src/config');
