@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const logger = require('./logger');
 const config = require('./config');
 const { markdownToWhatsApp, splitMessage } = require('./formatter');
@@ -602,7 +603,48 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
         // Extract image & document paths referenced in text AND generated inside AGY brain directory
         const textImagePaths = extractImagePaths(finalResponse);
         const { images: brainImagePaths, documents: brainDocPaths } = findGeneratedFilesForTask(convId, taskStartTime);
-        const allImagePaths = Array.from(new Set([...textImagePaths, ...brainImagePaths]));
+        const candidateImagePaths = Array.from(new Set([...textImagePaths, ...brainImagePaths]));
+
+        // Deduplicate images by file content hash to prevent sending identical images copied to multiple locations (e.g. Desktop + brain)
+        const allImagePaths = [];
+        const seenImageHashes = new Set();
+        for (const imgPath of candidateImagePaths) {
+          try {
+            if (fs.existsSync(imgPath)) {
+              const fileBuffer = fs.readFileSync(imgPath);
+              const hash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+              if (!seenImageHashes.has(hash)) {
+                seenImageHashes.add(hash);
+                allImagePaths.push(imgPath);
+              } else {
+                logger.info(`Skipping duplicate image with identical content hash (${hash.slice(0, 8)}): ${imgPath}`);
+              }
+            }
+          } catch (e) {
+            logger.warn(`Error hashing image file ${imgPath}: ${e.message}`);
+            allImagePaths.push(imgPath);
+          }
+        }
+
+        // Deduplicate documents by content hash as well
+        const uniqueDocPaths = [];
+        const seenDocHashes = new Set();
+        for (const docPath of brainDocPaths) {
+          try {
+            if (fs.existsSync(docPath)) {
+              const fileBuffer = fs.readFileSync(docPath);
+              const hash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+              if (!seenDocHashes.has(hash)) {
+                seenDocHashes.add(hash);
+                uniqueDocPaths.push(docPath);
+              } else {
+                logger.info(`Skipping duplicate document with identical content hash (${hash.slice(0, 8)}): ${docPath}`);
+              }
+            }
+          } catch (e) {
+            uniqueDocPaths.push(docPath);
+          }
+        }
 
         // Format and send text response
         const formatted = markdownToWhatsApp(finalResponse);
@@ -625,8 +667,8 @@ ${activeTasks.map(t => `  - Chat: \`${t.jid}\` (Running: ${Math.round(t.duration
         }
 
         // Send all generated document files (PDF, CSV, TXT, ZIP) natively as WhatsApp Document Cards
-        if (gatewayRef.sendDocumentMessage && brainDocPaths.length > 0) {
-          for (const docPath of brainDocPaths) {
+        if (gatewayRef.sendDocumentMessage && uniqueDocPaths.length > 0) {
+          for (const docPath of uniqueDocPaths) {
             logger.info(`Sending task document to ${jid}: ${docPath}`);
             await gatewayRef.sendDocumentMessage(jid, docPath, `📄 *AGY Generated File:* ${path.basename(docPath)}`);
           }
